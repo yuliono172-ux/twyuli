@@ -1,0 +1,7440 @@
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import {
+  Home as HomeIcon,
+  Printer,
+  ChevronLeft,
+  Search,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  SlidersHorizontal,
+  Download,
+  Upload,
+  Radar,
+  Award,
+  GraduationCap,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  Activity,
+  AlertTriangle,
+  FileText,
+  Info,
+  Compass,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  Layers,
+  Menu,
+  X,
+  Palette,
+  Type,
+  FolderOpen,
+  Check,
+  Settings2,
+  User,
+  Lock,
+  LogOut,
+  Users,
+  Shield,
+  Save,
+  Cloud,
+  CloudOff
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend as RechartsLegend,
+  ReferenceLine
+} from 'recharts';
+import {
+  TriwulanKey,
+  TRIWULAN_OPTIONS,
+  StudentRecord,
+  SiswaAssessmentRecord
+} from './types/rapor';
+import {
+  INITIAL_MASTER_STUDENTS,
+  createEmptyAssessmentRecord
+} from './data/initialData';
+import {
+  getAllQuartersComparison,
+  compareTwoQuarters,
+  getGradeFromScore
+} from './utils/quarterAnalysis';
+import {
+  predictNextQuarterAchievement,
+  StudentQuarterPredictionResult,
+  DimensionPredictionItem
+} from './utils/quarterPrediction';
+import { PerbandinganTriwulan } from './components/PerbandinganTriwulan';
+import { TeacherManagement } from './components/TeacherManagement';
+import { ModernAdminDashboard } from './components/ModernAdminDashboard';
+import { AspectAssessmentSheet, ASPECT_CONFIGS, AspectId } from './components/AspectAssessmentSheet';
+import { db, ref, set, onValue, off, remove, TeacherRecord, AppSettings } from './firebase';
+import { useToast } from './components/Toast';
+
+export interface UserAccount {
+  role: 'admin' | 'guru' | 'orangtua';
+  username: string;
+  nama: string;
+  kelas?: string;
+  tingkatKelas?: string;
+  nisn?: string;
+  studentNo?: number;
+}
+
+interface SiswaData {
+  no: number;
+  nama: string;
+  nis: string;
+  kelas: string;
+  // 1. KOGNITIF (6 Aspek)
+  kognitif: {
+    rp: string; // Rentang Perhatian
+    pi: string; // Pemahaman Instruksi
+    rm: string; // Rentang Memori
+    pm: string; // Pemecahan Masalah
+    kr: string; // Berpikir Kritis
+    ki: string; // Kreativitas / Inovasi
+    deskripsi: string;
+  };
+  // 2. AFEKTIF (5 Aspek)
+  afektif: {
+    em: string; // Empati
+    sh: string; // Suasana Hati
+    mo: string; // Motivasi
+    ks: string; // Kesabaran
+    kt: string; // Ketangguhan
+    deskripsi: string;
+  };
+  // 3. PSIKOMOTOR (4 Aspek)
+  psikomotor: {
+    mk: string; // Motorik Kasar
+    mh: string; // Motorik Halus
+    re: string; // Perilaku Repetitif
+    kk: string; // Keterampilan / Keluwesan
+    deskripsi: string;
+  };
+  // 4. SOSIAL (4 Aspek)
+  sosial: {
+    ot: string; // Otoritas
+    ld: string; // Kepemimpinan
+    at: string; // Altruisme
+    ko: string; // Komunikasi
+    deskripsi: string;
+  };
+  // 5. ISLAMIC LITERACY (3 Aspek)
+  islamicLiteracy: {
+    aq: string; // Kecintaan kepada Al Qur'an
+    ak: string; // Akhlak Terpuji
+    ib: string; // Semangat Beribadah
+    deskripsi: string;
+  };
+  // 6. BILINGUAL (2 Aspek)
+  bilingual: {
+    kd: string; // Kepercayaan Diri
+    sb: string; // Semangat Belajar
+    deskripsi: string;
+  };
+  // 7. TALENTS (2 Aspek)
+  talents: {
+    uq: string; // Keunikan
+    in: string; // Ketertarikan / Hobi
+    deskripsi: string;
+  };
+  // 8. EXPERIENCE (3 Aspek)
+  experience: {
+    ex: string; // Eksplorasi
+    ob: string; // Observatif
+    re: string; // Refleksi
+    deskripsi: string;
+  };
+  // 9. INKLUSIVITAS (3 Aspek)
+  inklusivitas: {
+    so: string; // Solidaritas
+    fa: string; // Keadilan
+    ph: string; // Penghormatan
+    deskripsi: string;
+  };
+  // Catatan Khusus Lembar Cetak Rapor
+  deskripsiRapor?: string;
+  saranRapor?: string;
+  overallGrades?: Record<string, string>;
+  tahunAjaran?: string;
+  allTriwulan?: Record<TriwulanKey, SiswaAssessmentRecord>;
+}
+
+// 30 Siswa Resmi Kelas IV
+const STUDENT_NAMES: { no: number; nama: string; nis: string }[] = [
+  { no: 1, nama: 'ABIZAR ARFAN RAQQILLA', nis: '202340001' },
+  { no: 2, nama: 'ADZKIA HILYA NAFIZAH', nis: '202540031' },
+  { no: 3, nama: 'AGHA FAIQ FIRMANSYAH', nis: '202340002' },
+  { no: 4, nama: 'AILLEN NATHANIA WAHYU', nis: '202340003' },
+  { no: 5, nama: 'ALDEN MALIK AR\'RAUF', nis: '202340004' },
+  { no: 6, nama: 'ANUGRAH DAFFA HAFIDZUDIN', nis: '202340005' },
+  { no: 7, nama: 'ARETHA KHANZA NAVISHA AZKA WIBOWO', nis: '202340006' },
+  { no: 8, nama: 'ARSHAKA MUHAMMAD ZHAFRAN', nis: '202340007' },
+  { no: 9, nama: 'AZFAR ASDAFI AZKAR', nis: '202340008' },
+  { no: 10, nama: 'BOB GHALIBIE BORNEO', nis: '202340010' },
+  { no: 11, nama: 'DHIA HANUM SYARIF', nis: '202340011' },
+  { no: 12, nama: 'DIANUNA SERENADA LASHIRA SHANUM', nis: '202340012' },
+  { no: 13, nama: 'DIZKHA AZEL RUDYANSYAH', nis: '202340013' },
+  { no: 14, nama: 'EMBUN LYCOFOS AZZAHRO', nis: '202340014' },
+  { no: 15, nama: 'FADLI NUR LESMANA', nis: '202340015' },
+  { no: 16, nama: 'FATHAN AL MAISAN ZHAFAR', nis: '202340016' },
+  { no: 17, nama: 'FATIH ATTALA RIZKIANO', nis: '202340017' },
+  { no: 18, nama: 'GWEN FELISHA SYAREEFA', nis: '202340018' },
+  { no: 19, nama: 'JAVIER RAUF FAYADI', nis: '202340019' },
+  { no: 20, nama: 'JOLIE ALESHA MECCA', nis: '202340020' },
+  { no: 21, nama: 'KHANSA SABIL HUMAIRA', nis: '202340021' },
+  { no: 22, nama: 'KHANZA AILA ASYIFA', nis: '202340022' },
+  { no: 23, nama: 'LAFISYA ORLIN KALINGGA', nis: '202340023' },
+  { no: 24, nama: 'MAHREEN SHAFANA ALMAHYRA', nis: '202340025' },
+  { no: 25, nama: 'MIRZA AMMAR AHZAALAN', nis: '202340026' },
+  { no: 26, nama: 'MUHAMMAD GAOZHAN AL GHIFARI', nis: '202340027' },
+  { no: 27, nama: 'PUTRI SALSABILA', nis: '202230022' },
+  { no: 28, nama: 'RASYIQUL ABID IBNU PURNOMO', nis: '202340028' },
+  { no: 29, nama: 'SHAKIRA RAMADHANI PERMANA', nis: '202340029' },
+  { no: 30, nama: 'SHAZIA ATHALLA SUGIARTO', nis: '202340030' }
+];
+
+const INITIAL_DATA: SiswaData[] = STUDENT_NAMES.map((s, idx) => {
+  const isAbizar = idx === 0;
+  return {
+    no: s.no,
+    nama: s.nama,
+    nis: s.nis,
+    kelas: 'IV (Empat)',
+    kognitif: {
+      rp: isAbizar ? 'B' : '',
+      pi: isAbizar ? 'B' : '',
+      rm: isAbizar ? 'B' : '',
+      pm: isAbizar ? 'B' : '',
+      kr: isAbizar ? 'C' : '',
+      ki: isAbizar ? 'C' : '',
+      deskripsi: isAbizar ? 'Mampu memahami materi dengan baik dan berpikir kreatif dalam menyelesaikan tugas.' : ''
+    },
+    afektif: {
+      em: isAbizar ? 'C' : '',
+      sh: isAbizar ? 'C' : '',
+      mo: isAbizar ? 'C' : '',
+      ks: isAbizar ? 'Defisit' : '',
+      kt: isAbizar ? 'Defisit' : '',
+      deskripsi: isAbizar ? 'Perlu pendampingan dalam kesabaran dan ketangguhan saat menghadapi tantangan.' : ''
+    },
+    psikomotor: {
+      mk: isAbizar ? 'Defisit' : '',
+      mh: isAbizar ? 'Defisit' : '',
+      re: isAbizar ? 'Exceptional' : '',
+      kk: isAbizar ? 'Exceptional' : '',
+      deskripsi: isAbizar ? 'Sangat terampil dalam mengendalikan perilaku dan menggunakan peralatan di sekitarnya.' : ''
+    },
+    sosial: {
+      ot: isAbizar ? 'Exceptional' : '',
+      ld: isAbizar ? 'Exceptional' : '',
+      at: isAbizar ? 'A' : '',
+      ko: isAbizar ? 'A' : '',
+      deskripsi: isAbizar ? 'Memiliki jiwa kepemimpinan yang sangat menonjol, taat aturan, dan komunikatif.' : ''
+    },
+    islamicLiteracy: {
+      aq: isAbizar ? 'A' : '',
+      ak: isAbizar ? 'B' : '',
+      ib: isAbizar ? 'B' : '',
+      deskripsi: isAbizar ? 'Menunjukkan kecintaan mendalam terhadap Al-Qur\'an dan bersemangat dalam beribadah.' : ''
+    },
+    bilingual: {
+      kd: isAbizar ? 'Defisit' : '',
+      sb: isAbizar ? 'Defisit' : '',
+      deskripsi: isAbizar ? 'Perlu dorongan untuk meningkatkan kepercayaan diri berbahasa dwi-bahasa.' : ''
+    },
+    talents: {
+      uq: isAbizar ? 'Exceptional' : '',
+      in: isAbizar ? 'Exceptional' : '',
+      deskripsi: isAbizar ? 'Memiliki keunikan pribadi yang sangat positif dan minat hobi yang kuat.' : ''
+    },
+    experience: {
+      ex: isAbizar ? 'Exceptional' : '',
+      ob: isAbizar ? 'A' : '',
+      re: isAbizar ? 'A' : '',
+      deskripsi: isAbizar ? 'Sangat antusias bereksplorasi mencoba hal baru dan jeli dalam mengamati.' : ''
+    },
+    inklusivitas: {
+      so: isAbizar ? 'A' : '',
+      fa: isAbizar ? 'A' : '',
+      ph: isAbizar ? 'A' : '',
+      deskripsi: isAbizar ? 'Menunjukkan solidaritas tinggi, memperlakukan teman dengan adil dan respek.' : ''
+    },
+    deskripsiRapor: isAbizar
+      ? `Selama periode pembelajaran ini, Ananda Abizar Arfan Raqqilla menunjukkan perkembangan yang sangat positif dan menggembirakan. Ananda Abizar Arfan Raqqilla tumbuh menjadi pribadi yang hangat, percaya diri, dan penuh rasa ingin tahu. Ia memiliki antusiasme tinggi dalam mengeksplorasi pengalaman belajar baru serta menunjukkan kekuatan menonjol pada aspek sosial-emosional dan keagamaan.
+
+Ananda Abizar Arfan Raqqilla adalah anak yang tangguh dan tidak mudah menyerah saat menghadapi tantangan. Ia memiliki keberanian komunikasi yang baik, semangat eksplorasi bahasa, serta menunjukkan ketertarikan dan kecintaan terhadap Al-Qur'an. Dalam berinteraksi sehari-hari, Ananda Abizar Arfan Raqqilla menunjukkan empati yang tinggi, sikap adil, serta ketulusan untuk membantu dan merangkul teman-temannya. Koordinasi gerak tubuh dan keluwesannya dalam menggunakan media belajar juga berkembang sangat baik, menjadi fondasi kuat bagi kemandirian dan pembentukan karakter positifnya.
+
+Untuk mendukung tumbuh kembang Ananda Abizar Arfan Raqqilla secara optimal, fokus pendampingan selanjutnya adalah menguatkan fokus dan daya amatinya secara bertahap, seperti dalam memahami petunjuk belajar, ketelitian berpikir kritis, serta keterampilan motorik halus. Kami juga terus mendampingi Ananda Abizar Arfan Raqqilla dalam pembiasaan perilaku, antusiasme ibadah, serta kepatuhan pada kesepakatan bersama. Kami meyakini area-area ini dapat terus ditumbuhkan melalui pengalaman belajar yang menyenangkan, bermakna, dan penuh kasih sayang.`
+      : undefined,
+    saranRapor: isAbizar
+      ? `Terima kasih yang sebesar-besarnya kepada  Parents  yang telah merawat semangat belajar Ananda Abizar Arfan Raqqilla hingga ia tumbuh menjadi anak yang tangguh, empati, dan penuh rasa ingin tahu. Untuk terus mendukung perkembangannya di rumah,  Parents  dapat secara bertahap mengasah fokus dan daya ingat Ananda Abizar Arfan Raqqilla dengan memberikan petunjuk sederhana satu per satu saat beraktivitas, lalu mengundangnya mengulang instruksi tersebut lewat obrolan yang santai. Karakter Ananda Abizar Arfan Raqqilla yang tidak mudah menyerah juga bisa disalurkan lewat kegiatan bermain bersama yang melatih jemari dan ketelitian—seperti merakit lego, melipat kertas, atau menggambar—dengan tetap memberikan apresiasi tulus pada setiap proses dan usahanya, bukan hanya pada hasil akhir.
+
+Sikap santun dan kebaikan hati Ananda Abizar Arfan Raqqilla yang luar biasa tentu tidak lepas dari keteladanan hangat di rumah. Agar kedisiplinan dan rasa tanggung jawabnya semakin mekar, ajak Ananda Abizar Arfan Raqqilla membuat kesepakatan rutinitas harian atau jadwal bergambar bersama, sehingga ia merasa bangga dan memiliki peran aktif saat menjalankan ibadah maupun merapikan perlengkapannya. Menjelang waktu tidur, luangkan momen pillow talk untuk mengapresiasi hal-hal baik yang ia lakukan sepanjang hari; ruang aman ini tidak hanya mempererat ikatan emosional, tetapi juga menjadi sarana yang sangat indah bagi Ananda Abizar Arfan Raqqilla untuk berlatih mengamati, berpikir kritis, dan mengungkapkan isi hatinya.`
+      : undefined
+  };
+});
+
+const PILIHAN_PREDIKAT = ['Exceptional', 'A', 'B', 'C', 'Defisit'];
+
+interface IndikatorMeta {
+  key: string;
+  kode: string;
+  nama: string;
+  deskripsi: string;
+  labelLengkap: string;
+}
+
+interface AspekMeta {
+  id: string;
+  no: number;
+  nama: string;
+  kategori: string;
+  deskripsi: string;
+  saranKelemahan: string;
+  colorBg: string; // Warna khas dari Excel sheet masing-masing
+  colorText: string;
+  colorBorder: string;
+  indikatorList: IndikatorMeta[];
+}
+
+const ASPEK_LIST: AspekMeta[] = [
+  {
+    id: 'kognitif',
+    no: 1,
+    nama: 'KOGNITIF',
+    kategori: 'Perkembangan Kognitif & Berpikir',
+    colorBg: '#ffff00', // Kuning terang khas tab Kognitif
+    colorText: '#000000',
+    colorBorder: '#cccc00',
+    deskripsi: 'Rentang perhatian, pemahaman instruksi, rentang memori, pemecahan masalah, berpikir kritis, dan kreativitas.',
+    saranKelemahan: 'Perlu bimbingan intensif dan latihan teratur dalam pemusatan fokus perhatian belajar melalui media visual menarik, serta pembiasaan memecahkan masalah bertahap dan mematuhi petunjuk instruksi secara perlahan.',
+    indikatorList: [
+      { key: 'rp', kode: 'RP', nama: 'Rentang Perhatian', deskripsi: 'kefokusan menerima pembelajaran', labelLengkap: 'Rentang Perhatian (RP)(kefokusan menerima pembelajaran)' },
+      { key: 'pi', kode: 'PI', nama: 'Pemahaman Instruksi', deskripsi: 'Memahami instruksi / penjelasan yang diberikan', labelLengkap: 'Pemahaman Instruksi (PI)(Memahami instruksi / penjelasan yang diberikan)' },
+      { key: 'rm', kode: 'RM', nama: 'Rentang Memori', deskripsi: 'Menghapal / mengingat informasi', labelLengkap: 'Rentang Memori (RM)(Menghapal / mengingat informasi)' },
+      { key: 'pm', kode: 'PM', nama: 'Pemecahan Masalah', deskripsi: 'Kemampuan memecahkan kasus / permasalahan', labelLengkap: 'Pemecahan Masalah (PM)(Kemampuan memecahkan kasus / permasalahan)' },
+      { key: 'kr', kode: 'KR', nama: 'Berpikir kritis', deskripsi: 'Memeriksa, meneliti, mengamati secara jeli', labelLengkap: 'Berpikir kritis (KR)(Memeriksa, meneliti, mengamati secara jeli)' },
+      { key: 'ki', kode: 'KI', nama: 'Kreativitas / Inovasi', deskripsi: 'Memunculkan ide / gagasan baru, imajinasi', labelLengkap: 'Kreativitas / Inovasi (KI)(Memunculkan ide / gagasan baru, imajinasi)' },
+    ]
+  },
+  {
+    id: 'afektif',
+    no: 2,
+    nama: 'AFEKTIF',
+    kategori: 'Perkembangan Emosional & Sikap',
+    colorBg: '#4f81bd', // Biru khas tab Afektif
+    colorText: '#ffffff',
+    colorBorder: '#2f5597',
+    deskripsi: 'Empati, stabilitas suasana hati, motivasi belajar, kesabaran, dan ketangguhan.',
+    saranKelemahan: 'Perlu pendampingan berkala dalam pengelolaan emosi dan suasana hati, serta pemberian motivasi dan apresiasi positif agar memiliki ketangguhan saat menghadapi hambatan.',
+    indikatorList: [
+      { key: 'em', kode: 'EM', nama: 'Empati', deskripsi: 'Kemampuan memahami perasaan orang lain', labelLengkap: 'Empati (EM)(Kemampuan memahami perasaan orang lain)' },
+      { key: 'sh', kode: 'SH', nama: 'Suasana Hati', deskripsi: 'Kemampuan menjaga stabilitas suasana hati', labelLengkap: 'Suasana Hati (SH)(Kemampuan menjaga stabilitas suasana hati)' },
+      { key: 'mo', kode: 'MO', nama: 'Motivasi', deskripsi: 'Terjaga semangatnya di setiap situasi', labelLengkap: 'Motivasi (MO)(Terjaga semangatnya di setiap situasi)' },
+      { key: 'ks', kode: 'KS', nama: 'Kesabaran', deskripsi: 'Menjaga diri dari emosi yang meledak-ledak', labelLengkap: 'Kesabaran (KS)(Menjaga diri dari emosi yang meledak-ledak)' },
+      { key: 'kt', kode: 'KT', nama: 'Ketangguhan', deskripsi: 'Mampu bangkit dari kegagalan / kesedihan', labelLengkap: 'Ketangguhan (KT)(Mampu bangkit dari kegagalan / kesedihan)' },
+    ]
+  },
+  {
+    id: 'psikomotor',
+    no: 3,
+    nama: 'PSIKOMOTOR',
+    kategori: 'Keterampilan Fisik & Motorik',
+    colorBg: '#f28a8a', // Salmon / Merah Muda khas tab Psikomotor
+    colorText: '#000000',
+    colorBorder: '#da9694',
+    deskripsi: 'Motorik kasar, motorik halus, pengontrolan repetitif, dan keluwesan penggunaan alat.',
+    saranKelemahan: 'Disarankan melatih kerapian motorik halus (seperti menulis, melipat, meronce, dan penggunaan alat belajar) serta koordinasi fisik melalui kegiatan fisik aktif yang terarah.',
+    indikatorList: [
+      { key: 'mk', kode: 'MK', nama: 'Motorik Kasar', deskripsi: 'Keseimbangan, melompat, berlari', labelLengkap: 'Motorik Kasar (MK)(Keseimbangan, melompat, berlari)' },
+      { key: 'mh', kode: 'MH', nama: 'Motorik Halus', deskripsi: 'Menggambar sesuai pola, menulis rapi', labelLengkap: 'Motorik Halus (MH)(Menggambar sesuai pola, menulis rapi)' },
+      { key: 're', kode: 'RE', nama: 'Perilaku Repetitif', deskripsi: 'Mengendalikan diri dari perilaku berulang yang tidak perlu', labelLengkap: 'Perilaku Repetitif (RE)(Mengendalikan diri dari perilaku berulang yang tidak perlu)' },
+      { key: 'kk', kode: 'KK', nama: 'Keterampilan / Keluwesan', deskripsi: 'Kemampuan dalam menggunakan fisik / peralatan di sekitarnya', labelLengkap: 'Keterampilan / Keluwesan (KK)(Kemampuan dalam menggunakan fisik / peralatan di sekitarnya)' },
+    ]
+  },
+  {
+    id: 'sosial',
+    no: 4,
+    nama: 'SOSIAL',
+    kategori: 'Interaksi Sosial & Kepemimpinan',
+    colorBg: '#595959', // Slate / Abu-abu Tua khas tab Sosial
+    colorText: '#ffffff',
+    colorBorder: '#404040',
+    deskripsi: 'Kepatuhan aturan kelompok (otoritas), kepemimpinan, kepedulian tulus (altruisme), dan komunikasi ide.',
+    saranKelemahan: 'Perlu pembiasaan dalam mematuhi kesepakatan tata tertib kelompok, berani mengemukakan ide gagasan di depan umum, serta menumbuhkan jiwa kepemimpinan dan kepedulian tulus.',
+    indikatorList: [
+      { key: 'ot', kode: 'OT', nama: 'Otoritas', deskripsi: 'Kemampuan dalam mengikuti tata tertib / peraturan kelompok yang disepakati', labelLengkap: 'Otoritas (OT)(Kemampuan dalam mengikuti tata tertib / peraturan kelompok yang disepakati)' },
+      { key: 'ld', kode: 'LD', nama: 'Kepemimpinan', deskripsi: 'Kemampuan mempengaruhi dan mengarahkan oranglain', labelLengkap: 'Kepemimpinan (LD)(Kemampuan mempengaruhi dan mengarahkan oranglain)' },
+      { key: 'at', kode: 'AT', nama: 'Altruisme', deskripsi: 'Memiliki kepedulian untuk membantu secara tulus', labelLengkap: 'Altruisme (AT)(Memiliki kepedulian untuk membantu secara tulus)' },
+      { key: 'ko', kode: 'KO', nama: 'Komunikasi', deskripsi: 'Kemampuan menyampaikan ide dan gagasan kepada orang lain sampai paham', labelLengkap: 'Komunikasi (KO)(Kemampuan menyampaikan ide dan gagasan kepada orang lain sampai paham)' },
+    ]
+  },
+  {
+    id: 'islamicLiteracy',
+    no: 5,
+    nama: 'ISLAMIC LITERACY',
+    kategori: 'Literasi Keislaman & Ibadah',
+    colorBg: '#b1a0c7', // Ungu Lavender khas tab Islamic Literacy
+    colorText: '#000000',
+    colorBorder: '#7030a0',
+    deskripsi: 'Kecintaan Al-Qur\'an, penerapan akhlak terpuji, dan semangat beribadah harian.',
+    saranKelemahan: 'Perlu bimbingan dan pembiasaan cinta Al-Qur\'an (tilawah/tahfidz rutin), keteladanan akhlak terpuji, serta kedisiplinan beribadah doa dan sholat baik di sekolah maupun di rumah.',
+    indikatorList: [
+      { key: 'aq', kode: 'AQ', nama: 'Kecintaan kepada Al Qur\'an', deskripsi: 'Menunjukan sikap & perilaku yang mencintai Al Qur\'an', labelLengkap: 'Kecintaan kepada Al Qur\'an (AQ)(Menunjukan sikap & perilaku yang mencintai Al Qur\'an)' },
+      { key: 'ak', kode: 'AK', nama: 'Akhlak Terpuji', deskripsi: 'Menunjukkan kesediaan untuk menunjukkan akhlak yang terpuji', labelLengkap: 'Akhlak Terpuji (AK)(Menunjukkan kesediaan untuk menunjukkan akhlak yang terpuji)' },
+      { key: 'ib', kode: 'IB', nama: 'Semangat Beribadah', deskripsi: 'Menunjukkan antusiasme dan semangat dalam beribadah & berdoa', labelLengkap: 'Semangat Beribadah (IB)(Menunjukkan antusiasme dan semangat dalam beribadah & berdoa)' },
+    ]
+  },
+  {
+    id: 'bilingual',
+    no: 6,
+    nama: 'BILINGUAL',
+    kategori: 'Kemampuan Dwi-Bahasa',
+    colorBg: '#92cddc', // Toska / Mint khas tab Bilingual
+    colorText: '#000000',
+    colorBorder: '#31859c',
+    deskripsi: 'Kepercayaan diri berbahasa dan semangat mempelajari kosa kata baru.',
+    saranKelemahan: 'Perlu dorongan rasa percaya diri untuk mempraktikkan kosa kata dwi-bahasa dalam percakapan sehari-hari secara natural tanpa rasa takut salah.',
+    indikatorList: [
+      { key: 'kd', kode: 'KD', nama: 'Kepercayaan Diri', deskripsi: 'Menunjukkan kepercayaan diri untuk menggunakan dwi-bahasa dalam keseharian', labelLengkap: 'Kepercayaan Diri (KD)(Menunjukkan kepercayaan diri untuk menggunakan dwi-bahasa dalam keseharian)' },
+      { key: 'sb', kode: 'SB', nama: 'Semangat Belajar', deskripsi: 'Menunjukkan semangat mempelajari hal baru terkait dengan aktivitas dwi-bahasa', labelLengkap: 'Semangat Belajar (SB)(Menunjukkan semangat mempelajari hal baru terkait dengan aktivitas dwi-bahasa)' },
+    ]
+  },
+  {
+    id: 'talents',
+    no: 7,
+    nama: 'TALENTS',
+    kategori: 'Minat, Bakat & Keunikan',
+    colorBg: '#ffc000', // Kuning Emas khas tab Talents
+    colorText: '#000000',
+    colorBorder: '#e26b00',
+    deskripsi: 'Mengenali keunikan karakter diri dan ketertarikan minat/hobi positif.',
+    saranKelemahan: 'Perlu pendampingan dan fasilitas pendukung untuk mengenali minat, bakat, serta keunikan diri melalui kegiatan kreatif atau ekstrakurikuler yang diminati.',
+    indikatorList: [
+      { key: 'uq', kode: 'UQ', nama: 'Keunikan', deskripsi: 'Memiliki kekhasan secara pribadi yang positif dan mewarnai lingkungan', labelLengkap: 'Keunikan (UQ)(Memiliki kekhasan secara pribadi yang positif dan mewarnai lingkungan)' },
+      { key: 'in', kode: 'IN', nama: 'Ketertarikan / Hobi', deskripsi: 'Telah memiliki ketertarikan / hobi yang positif', labelLengkap: 'Ketertarikan / Hobi (IN)Telah memiliki ketertarikan / hobi yang positif' },
+    ]
+  },
+  {
+    id: 'experience',
+    no: 8,
+    nama: 'EXPERIENCE',
+    kategori: 'Pengalaman & Observasi Belajar',
+    colorBg: '#95b3d7', // Biru Langit khas tab Experience
+    colorText: '#000000',
+    colorBorder: '#4f81bd',
+    deskripsi: 'Eksplorasi pengalaman baru, daya amati observatif, dan kemampuan refleksi.',
+    saranKelemahan: 'Disarankan untuk lebih sering diajak mengamati lingkungan sekitar secara observatif, mencoba pengalaman baru, serta mengungkapkan refleksi dari kegiatan yang dialami.',
+    indikatorList: [
+      { key: 'ex', kode: 'EX', nama: 'Eksplorasi', deskripsi: 'Menunjukkan ketertarikan untuk mencoba hal baru', labelLengkap: 'Eksplorasi (EX)(Menunjukkan ketertarikan untuk mencoba hal baru)' },
+      { key: 'ob', kode: 'OB', nama: 'Observatif', deskripsi: 'Menujukkan kejelian saat mengobservasi / mengamati sebuah peristiwa', labelLengkap: 'Observatif (OB)(Menujukkan kejelian saat mengobservasi / mengamati sebuah peristiwa)' },
+      { key: 're', kode: 'RE', nama: 'Refleksi', deskripsi: 'memiliki kemampuan untuk mengambil kesimpulan dari sebuah kejadian', labelLengkap: 'Refleksi (RE)(memiliki kemampuan untuk mengambil kesimpulan dari sebuah kejadian)' },
+    ]
+  },
+  {
+    id: 'inklusivitas',
+    no: 9,
+    nama: 'INKLUSIVITAS',
+    kategori: 'Sikap Inklusif & Respek Sosial',
+    colorBg: '#92d050', // Hijau Muda khas tab Inklusivitas
+    colorText: '#000000',
+    colorBorder: '#70ad47',
+    deskripsi: 'Solidaritas berbagi, keadilan merangkul teman, dan respek saling menghormati.',
+    saranKelemahan: 'Perlu penguatan sikap empati, memperlakukan teman secara adil tanpa membeda-bedakan, serta menumbuhkan rasa saling menghargai dan respek terhadap keberagaman.',
+    indikatorList: [
+      { key: 'so', kode: 'SO', nama: 'Solidaritas', deskripsi: 'Memiliki kepedulian terhadap teman yang membutuhkan bantuan, tak segan berbagi', labelLengkap: 'Solidaritas (SO)Memiliki kepedulian terhadap teman yang membutuhkan bantuan, tak segan berbagi' },
+      { key: 'fa', kode: 'FA', nama: 'Keadilan', deskripsi: 'Memperlakukan teman dengan adil tanpa membeda-bedakan', labelLengkap: 'Keadilan (FA)(Memperlakukan teman dengan adil tanpa membeda-bedakan)' },
+      { key: 'ph', kode: 'PH', nama: 'Penghormatan', deskripsi: 'Respek terhadap orang lain, tidak melakukan bullying / shaming atas kekurangan teman', labelLengkap: 'Penghormatan (PH)Respek terhadap orang lain, tidak melakukan bullying / shaming atas kekurangan teman' },
+    ]
+  }
+];
+
+const GRADE_WEIGHTS: Record<string, number> = {
+  'Exceptional': 5,
+  'A': 4,
+  'B': 3,
+  'C': 2,
+  'Defisit': 1
+};
+
+const getAspectGrade = (siswa: SiswaData, aspectId: string): string => {
+  if (siswa.overallGrades && siswa.overallGrades[aspectId]) {
+    return siswa.overallGrades[aspectId];
+  }
+  const aspekMeta = ASPEK_LIST.find((a) => a.id === aspectId);
+  if (!aspekMeta) return '-';
+  const sec = (siswa[aspectId as keyof SiswaData] as Record<string, string>) || {};
+  const values = aspekMeta.indikatorList.map((ind) => sec[ind.key]).filter((v) => v && GRADE_WEIGHTS[v]);
+  if (values.length === 0) return 'Defisit';
+  const sum = values.reduce((acc, v) => acc + GRADE_WEIGHTS[v], 0);
+  const avg = sum / values.length;
+  if (avg >= 4.5) return 'Exceptional';
+  if (avg >= 3.5) return 'A';
+  if (avg >= 2.5) return 'B';
+  if (avg >= 1.5) return 'C';
+  return 'Defisit';
+};
+
+const generateDefaultDeskripsi = (siswa: SiswaData): string => {
+  const exceptionalOrA: string[] = [];
+  const bList: string[] = [];
+  const defisitOrC: string[] = [];
+
+  ASPEK_LIST.forEach((asp) => {
+    const grade = getAspectGrade(siswa, asp.id);
+    if (grade === 'Exceptional' || grade === 'A') exceptionalOrA.push(asp.nama);
+    else if (grade === 'B') bList.push(asp.nama);
+    else if (grade === 'Defisit' || grade === 'C') defisitOrC.push(asp.nama);
+  });
+
+  let narasi = `Pada Triwulan ini, perkembangan Ananda ${siswa.nama} terpantau secara menyeluruh pada 9 dimensi perkembangan peserta didik.\n\n`;
+
+  if (exceptionalOrA.length > 0) {
+    narasi += `✓ Aspek Keunggulan: Ananda menunjukkan capaian yang sangat baik dan konsisten pada aspek ${exceptionalOrA.join(', ')}. Kemampuan ini mencerminkan kemandirian dan antusiasme belajar yang patut diapresiasi.\n\n`;
+  }
+  if (bList.length > 0) {
+    narasi += `✓ Aspek Berkembang: Pada aspek ${bList.join(', ')}, ananda menunjukkan perkembangan yang selaras dengan harapan tahapan usianya.\n\n`;
+  }
+  if (defisitOrC.length > 0) {
+    narasi += `✓ Aspek Pendampingan: Adapun pada aspek ${defisitOrC.join(', ')}, ananda masih memerlukan pendampingan berkelanjutan, bimbingan intensif, serta pembiasaan rutin agar potensinya dapat berkembang secara lebih optimal.`;
+  }
+
+  return narasi;
+};
+
+const generateDefaultSaran = (siswa: SiswaData): string => {
+  const kelemahan: { nama: string; saran: string }[] = [];
+
+  ASPEK_LIST.forEach((asp) => {
+    const grade = getAspectGrade(siswa, asp.id);
+    if (grade === 'Defisit' || grade === 'C') {
+      kelemahan.push({ nama: asp.nama, saran: asp.saranKelemahan });
+    }
+  });
+
+  if (kelemahan.length === 0) {
+    return `Alhamdulillah, Ananda ${siswa.nama} telah menunjukkan capaian perkembangan yang sangat baik (A / Exceptional) di seluruh aspek penilaian.\n\nSaran Pengembangan:\nPertahankan semangat belajar dan karakter terpuji yang telah terbangun dengan sangat baik ini. Ananda disarankan untuk terus mengasah potensi kepemimpinan, daya nalar kritis, dan kreativitas diri agar dapat menjadi inspirasi positif bagi teman-teman di lingkungan sekolah.`;
+  }
+
+  const saranList = kelemahan
+    .map((k, idx) => `${idx + 1}. Aspek ${k.nama}:\n   ${k.saran}`)
+    .join('\n\n');
+
+  return `Berdasarkan hasil evaluasi capaian perkembangan, berikut saran pembimbingan dan tindak lanjut prioritas berdasarkan aspek yang perlu ditingkatkan:\n\n${saranList}\n\n*Catatan Kolaborasi: Disarankan adanya komunikasi aktif dan kerjasama pendampingan yang berkesinambungan antara pihak sekolah dan orang tua di rumah agar pembiasaan positif di atas dapat tercapai secara maksimal.`;
+};
+
+interface AspectAnalysis {
+  id: string;
+  no: number;
+  nama: string;
+  kategori: string;
+  colorBg: string;
+  colorBorder: string;
+  score: number;
+  percentage: number;
+  grade: string;
+  indicators: {
+    key: string;
+    kode: string;
+    nama: string;
+    deskripsi: string;
+    labelLengkap: string;
+    rating: string;
+    score: number;
+  }[];
+  strengthIndicators: string[];
+  weaknessIndicators: string[];
+  explanation: string;
+}
+
+interface SpiderAnalysisResult {
+  aspects: AspectAnalysis[];
+  averageScore: number;
+  averagePercentage: number;
+  overallGrade: string;
+  topStrengths: AspectAnalysis[];
+  topWeaknesses: AspectAnalysis[];
+  strengthsSummary: string;
+  weaknessesSummary: string;
+}
+
+const getStudentSpiderAnalysis = (siswa: SiswaData): SpiderAnalysisResult => {
+  const aspects: AspectAnalysis[] = ASPEK_LIST.map((asp) => {
+    const sec = (siswa[asp.id as keyof SiswaData] as Record<string, string>) || {};
+    const indicators = asp.indikatorList.map((ind) => {
+      const rating = sec[ind.key] || 'Defisit';
+      const score = GRADE_WEIGHTS[rating] || 1;
+      return {
+        ...ind,
+        rating,
+        score
+      };
+    });
+
+    const totalScore = indicators.reduce((acc, curr) => acc + curr.score, 0);
+    const score = Number((totalScore / indicators.length).toFixed(2));
+    const percentage = Math.round((score / 5) * 100);
+    const grade = getAspectGrade(siswa, asp.id);
+
+    const strengthIndicators = indicators
+      .filter((ind) => ind.rating === 'Exceptional' || ind.rating === 'A')
+      .map((ind) => `${ind.nama} (${ind.rating})`);
+
+    const weaknessIndicators = indicators
+      .filter((ind) => ind.rating === 'Defisit' || ind.rating === 'C')
+      .map((ind) => `${ind.nama} (${ind.rating})`);
+
+    let explanation = '';
+    if (grade === 'Exceptional') {
+      explanation = `Capaian luar biasa (skor ${score} / 5.0). Seluruh indikator dikuasai dengan konsisten melampaui harapan usia.`;
+    } else if (grade === 'A') {
+      explanation = `Capaian sangat baik (skor ${score} / 5.0). Menunjukkan keunggulan menonjol dengan kemandirian tinggi.`;
+    } else if (grade === 'B') {
+      explanation = `Capaian berkembang sesuai tahapan (skor ${score} / 5.0). Karakter dan keterampilan berkembang stabil.`;
+    } else if (grade === 'C') {
+      explanation = `Mulai berkembang (skor ${score} / 5.0). Memerlukan stimulasi aktif dan latihan bertahap.`;
+    } else {
+      explanation = `Perlu pendampingan khusus (skor ${score} / 5.0). Memerlukan bimbingan intensif dan kerjasama aktif orang tua di rumah.`;
+    }
+
+    return {
+      id: asp.id,
+      no: asp.no,
+      nama: asp.nama,
+      kategori: asp.kategori,
+      colorBg: asp.colorBg,
+      colorBorder: asp.colorBorder,
+      score,
+      percentage,
+      grade,
+      indicators,
+      strengthIndicators,
+      weaknessIndicators,
+      explanation
+    };
+  });
+
+  const totalAspectScores = aspects.reduce((sum, a) => sum + a.score, 0);
+  const averageScore = Number((totalAspectScores / aspects.length).toFixed(2));
+  const averagePercentage = Math.round((averageScore / 5) * 100);
+
+  let overallGrade = 'B';
+  if (averageScore >= 4.5) overallGrade = 'Exceptional';
+  else if (averageScore >= 3.5) overallGrade = 'A';
+  else if (averageScore >= 2.5) overallGrade = 'B';
+  else if (averageScore >= 1.5) overallGrade = 'C';
+  else overallGrade = 'Defisit';
+
+  // Pemilahan dimensi unggulan dan prioritas bimbingan yang mutually exclusive (tidak tumpang tindih)
+  const sortedDesc = [...aspects].sort((a, b) => b.score - a.score);
+  
+  // Ambil dimensi dengan skor tertinggi (maksimal 3 aspek teratas) sebagai keunggulan
+  const candidateStrengths = sortedDesc.filter((a) => a.score >= 3.5);
+  const finalStrengths = (candidateStrengths.length > 0 ? candidateStrengths : sortedDesc.slice(0, 3)).slice(0, 3);
+  const strengthIds = new Set(finalStrengths.map((s) => s.id));
+
+  // Dimensi prioritas bimbingan diambil dari aspek tersisa (yang tidak ada di dimensi keunggulan), diurutkan dari skor terendah
+  const remainingForWeaknesses = [...aspects]
+    .filter((a) => !strengthIds.has(a.id))
+    .sort((a, b) => a.score - b.score);
+  
+  const lowScoringWeaknesses = remainingForWeaknesses.filter((a) => a.score <= 3.0);
+  const finalWeaknesses = (lowScoringWeaknesses.length > 0 ? lowScoringWeaknesses : remainingForWeaknesses).slice(0, 3);
+
+  const strongNames = finalStrengths.map((s) => s.nama).join(', ');
+  const weakNames = finalWeaknesses.map((w) => w.nama).join(', ');
+
+  const strengthsSummary = `Berdasarkan peta radar capaian, kekuatan dominan Ananda ${siswa.nama} terletak pada dimensi ${strongNames}. Ananda menunjukkan antusiasme belajar yang tinggi, karakter kepemimpinan, kepedulian sosial, serta potensi keunikan diri yang patut diapresiasi dan dipertahankan.`;
+
+  const weaknessesSummary = `Area perkembangan yang masih menjadi prioritas pendampingan teridentifikasi pada dimensi ${weakNames}. Diperlukan strategi bimbingan bertahap dari guru di kelas serta pembiasaan rutin yang hangat dari orang tua di rumah agar capaian pada aspek ini dapat bertumbuh optimal.`;
+
+  return {
+    aspects,
+    averageScore,
+    averagePercentage,
+    overallGrade,
+    topStrengths: finalStrengths,
+    topWeaknesses: finalWeaknesses,
+    strengthsSummary,
+    weaknessesSummary
+  };
+};
+
+interface QuarterTrendPoint {
+  periode: string;
+  label: string;
+  rerata: number;
+  kognitif: number;
+  afektif: number;
+  psikomotor: number;
+  sosial: number;
+  islamicLiteracy: number;
+  islamic_literacy: number;
+  bilingual: number;
+  talents: number;
+  experience: number;
+  inklusivitas: number;
+  [key: string]: string | number;
+}
+
+interface DimensionQuarterComparison {
+  id: string;
+  nama: string;
+  singkatan: string;
+  triwulanLalu: number;
+  triwulanIni: number;
+  selisih: number;
+  persen: number;
+  isNaik: boolean;
+}
+
+interface StudentQuarterTrendsResult {
+  quarters: QuarterTrendPoint[];
+  overallDiff: number;
+  overallPercent: number;
+  isOverallUp: boolean;
+  prevRerata: number;
+  currentRerata: number;
+  highestGrowthDimension: DimensionQuarterComparison;
+  dimensionComparisons: DimensionQuarterComparison[];
+}
+
+const getStudentQuarterTrends = (siswa: SiswaData): StudentQuarterTrendsResult => {
+  const analysis = getStudentSpiderAnalysis(siswa);
+  const currentScores: Record<string, number> = {};
+  analysis.aspects.forEach((asp) => {
+    currentScores[asp.id] = asp.score;
+  });
+  // Sediakan alias untuk konsistensi camelCase & snake_case
+  if (currentScores['islamicLiteracy'] !== undefined) {
+    currentScores['islamic_literacy'] = currentScores['islamicLiteracy'];
+  } else if (currentScores['islamic_literacy'] !== undefined) {
+    currentScores['islamicLiteracy'] = currentScores['islamic_literacy'];
+  }
+
+  const triwulanMap = (siswa.allTriwulan || (siswa as any).triwulan) as Record<TriwulanKey, SiswaAssessmentRecord> | undefined;
+
+  // Fungsi pengambilan skor aspek dari data triwulan nyata siswa atau baseline deterministik
+  const getScoreForQuarterAspect = (
+    qKey: 'T1' | 'T2' | 'T3' | 'T4',
+    aspectId: string,
+    stage: 1 | 2 | 3 | 4
+  ): number => {
+    const qRecord = triwulanMap?.[qKey];
+    if (qRecord) {
+      // Periksa overallGrades manual jika tersedia
+      if (qRecord.overallGrades && qRecord.overallGrades[aspectId]) {
+        const og = qRecord.overallGrades[aspectId];
+        if (GRADE_WEIGHTS[og]) return GRADE_WEIGHTS[og];
+      }
+      
+      const aspMeta = ASPEK_LIST.find((a) => a.id === aspectId || (aspectId === 'islamic_literacy' && a.id === 'islamicLiteracy'));
+      if (aspMeta) {
+        const sec = (qRecord[aspMeta.id as keyof SiswaAssessmentRecord] ||
+          (qRecord as any)[aspMeta.id.replace(/([A-Z])/g, '_$1').toLowerCase()] ||
+          (aspMeta.id === 'islamicLiteracy' ? (qRecord as any).islamic_literacy : undefined)) as Record<string, string> | undefined;
+
+        if (sec) {
+          const scores: number[] = [];
+          aspMeta.indikatorList.forEach((ind) => {
+            const val = sec[ind.key];
+            if (val && GRADE_WEIGHTS[val]) {
+              scores.push(GRADE_WEIGHTS[val]);
+            }
+          });
+          if (scores.length > 0) {
+            const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+            return Number(avg.toFixed(2));
+          }
+        }
+      }
+    }
+
+    // Jika stage 4 (triwulan saat ini), gunakan skor analisis terkini
+    if (stage === 4) {
+      const cur = currentScores[aspectId] ?? (aspectId === 'islamic_literacy' ? currentScores['islamicLiteracy'] : currentScores['islamic_literacy']);
+      return cur !== undefined ? cur : 3.5;
+    }
+
+    // Fallback kurva deterministik jika data periode lalu belum diinput
+    const cur = currentScores[aspectId] ?? (aspectId === 'islamic_literacy' ? currentScores['islamicLiteracy'] : currentScores['islamic_literacy']) ?? 3.5;
+    const seed = (siswa.no * 7 + aspectId.charCodeAt(0) * 3 + stage * 11) % 100;
+    const growthGap = stage === 3 ? 0.22 : stage === 2 ? 0.44 : 0.68;
+    const variation = (seed / 100) * 0.16 - 0.08;
+    const prev = Math.max(1.8, Math.min(4.9, cur - growthGap + variation));
+    return Number(prev.toFixed(2));
+  };
+
+  const t1_il = getScoreForQuarterAspect('T1', 'islamicLiteracy', 1);
+  const t2_il = getScoreForQuarterAspect('T2', 'islamicLiteracy', 2);
+  const t3_il = getScoreForQuarterAspect('T3', 'islamicLiteracy', 3);
+  const t4_il = getScoreForQuarterAspect('T4', 'islamicLiteracy', 4);
+
+  const quarters: QuarterTrendPoint[] = [
+    {
+      periode: 'TW 1',
+      label: 'Triwulan I (Awal)',
+      rerata: 0,
+      kognitif: getScoreForQuarterAspect('T1', 'kognitif', 1),
+      afektif: getScoreForQuarterAspect('T1', 'afektif', 1),
+      psikomotor: getScoreForQuarterAspect('T1', 'psikomotor', 1),
+      sosial: getScoreForQuarterAspect('T1', 'sosial', 1),
+      islamicLiteracy: t1_il,
+      islamic_literacy: t1_il,
+      bilingual: getScoreForQuarterAspect('T1', 'bilingual', 1),
+      talents: getScoreForQuarterAspect('T1', 'talents', 1),
+      experience: getScoreForQuarterAspect('T1', 'experience', 1),
+      inklusivitas: getScoreForQuarterAspect('T1', 'inklusivitas', 1)
+    },
+    {
+      periode: 'TW 2',
+      label: 'Triwulan II (Pertengahan)',
+      rerata: 0,
+      kognitif: getScoreForQuarterAspect('T2', 'kognitif', 2),
+      afektif: getScoreForQuarterAspect('T2', 'afektif', 2),
+      psikomotor: getScoreForQuarterAspect('T2', 'psikomotor', 2),
+      sosial: getScoreForQuarterAspect('T2', 'sosial', 2),
+      islamicLiteracy: t2_il,
+      islamic_literacy: t2_il,
+      bilingual: getScoreForQuarterAspect('T2', 'bilingual', 2),
+      talents: getScoreForQuarterAspect('T2', 'talents', 2),
+      experience: getScoreForQuarterAspect('T2', 'experience', 2),
+      inklusivitas: getScoreForQuarterAspect('T2', 'inklusivitas', 2)
+    },
+    {
+      periode: 'TW 3',
+      label: 'Triwulan III (Sebelumnya)',
+      rerata: 0,
+      kognitif: getScoreForQuarterAspect('T3', 'kognitif', 3),
+      afektif: getScoreForQuarterAspect('T3', 'afektif', 3),
+      psikomotor: getScoreForQuarterAspect('T3', 'psikomotor', 3),
+      sosial: getScoreForQuarterAspect('T3', 'sosial', 3),
+      islamicLiteracy: t3_il,
+      islamic_literacy: t3_il,
+      bilingual: getScoreForQuarterAspect('T3', 'bilingual', 3),
+      talents: getScoreForQuarterAspect('T3', 'talents', 3),
+      experience: getScoreForQuarterAspect('T3', 'experience', 3),
+      inklusivitas: getScoreForQuarterAspect('T3', 'inklusivitas', 3)
+    },
+    {
+      periode: 'TW 4',
+      label: 'Triwulan IV (Saat Ini)',
+      rerata: analysis.averageScore,
+      kognitif: getScoreForQuarterAspect('T4', 'kognitif', 4),
+      afektif: getScoreForQuarterAspect('T4', 'afektif', 4),
+      psikomotor: getScoreForQuarterAspect('T4', 'psikomotor', 4),
+      sosial: getScoreForQuarterAspect('T4', 'sosial', 4),
+      islamicLiteracy: t4_il,
+      islamic_literacy: t4_il,
+      bilingual: getScoreForQuarterAspect('T4', 'bilingual', 4),
+      talents: getScoreForQuarterAspect('T4', 'talents', 4),
+      experience: getScoreForQuarterAspect('T4', 'experience', 4),
+      inklusivitas: getScoreForQuarterAspect('T4', 'inklusivitas', 4)
+    }
+  ];
+
+  // Hitung rerata komprehensif 9 dimensi untuk TW 1, 2, 3
+  quarters[0].rerata = Number(
+    ((quarters[0].kognitif + quarters[0].afektif + quarters[0].psikomotor + quarters[0].sosial + quarters[0].islamicLiteracy + quarters[0].bilingual + quarters[0].talents + quarters[0].experience + quarters[0].inklusivitas) / 9).toFixed(2)
+  );
+  quarters[1].rerata = Number(
+    ((quarters[1].kognitif + quarters[1].afektif + quarters[1].psikomotor + quarters[1].sosial + quarters[1].islamicLiteracy + quarters[1].bilingual + quarters[1].talents + quarters[1].experience + quarters[1].inklusivitas) / 9).toFixed(2)
+  );
+  quarters[2].rerata = Number(
+    ((quarters[2].kognitif + quarters[2].afektif + quarters[2].psikomotor + quarters[2].sosial + quarters[2].islamicLiteracy + quarters[2].bilingual + quarters[2].talents + quarters[2].experience + quarters[2].inklusivitas) / 9).toFixed(2)
+  );
+
+  const prevQuarter = quarters[2];
+  const currentQuarter = quarters[3];
+  const overallDiff = Number((currentQuarter.rerata - prevQuarter.rerata).toFixed(2));
+  const overallPercent = Number(((overallDiff / prevQuarter.rerata) * 100).toFixed(1));
+
+  // Komparasi seluruh 9 dimensi
+  const dimensionComparisons: DimensionQuarterComparison[] = analysis.aspects.map((asp) => {
+    const prevRaw = prevQuarter[asp.id] !== undefined
+      ? prevQuarter[asp.id]
+      : (asp.id === 'islamicLiteracy' ? prevQuarter.islamic_literacy : prevQuarter[asp.id]);
+    const currRaw = currentQuarter[asp.id] !== undefined
+      ? currentQuarter[asp.id]
+      : (asp.id === 'islamicLiteracy' ? currentQuarter.islamic_literacy : currentQuarter[asp.id]);
+    const prev = Number(prevRaw) || 0;
+    const curr = Number(currRaw) || 0;
+    const diff = Number((curr - prev).toFixed(2));
+    const pct = prev > 0 ? Number(((diff / prev) * 100).toFixed(1)) : 0;
+    return {
+      id: asp.id,
+      nama: asp.nama,
+      singkatan: asp.nama.length > 10 ? asp.nama.substring(0, 9) + '..' : asp.nama,
+      triwulanLalu: prev,
+      triwulanIni: curr,
+      selisih: diff,
+      persen: pct,
+      isNaik: diff >= 0
+    };
+  });
+
+  const sortedByGrowth = [...dimensionComparisons].sort((a, b) => b.selisih - a.selisih);
+  const highestGrowthDimension = sortedByGrowth[0] || dimensionComparisons[0];
+
+  return {
+    quarters,
+    overallDiff,
+    overallPercent,
+    isOverallUp: overallDiff >= 0,
+    prevRerata: prevQuarter.rerata,
+    currentRerata: currentQuarter.rerata,
+    highestGrowthDimension,
+    dimensionComparisons
+  };
+};
+
+export const ASPEK_SIDEBAR_LIST = [
+  { id: 'kognitif', label: 'KOGNITIF', no: 1, color: '#ffff00', kode: 'KG' },
+  { id: 'afektif', label: 'AFEKTIF', no: 2, color: '#00b050', kode: 'AF' },
+  { id: 'psikomotor', label: 'PSIKOMOTOR', no: 3, color: '#002060', kode: 'PS' },
+  { id: 'sosial', label: 'SOSIAL', no: 4, color: '#595959', kode: 'SO' },
+  { id: 'islamic_literacy', label: 'ISLAMIC LITERACY', no: 5, color: '#b1a0c7', kode: 'IL' },
+  { id: 'bilingual', label: 'BILINGUAL', no: 6, color: '#92cddc', kode: 'BL' },
+  { id: 'talents', label: 'TALENTS', no: 7, color: '#ffc000', kode: 'TL' },
+  { id: 'experience', label: 'EXPERIENCE', no: 8, color: '#95b3d7', kode: 'EX' },
+  { id: 'inklusivitas', label: 'INKLUSIVITAS', no: 9, color: '#92d050', kode: 'IN' }
+];
+
+export const ASPECT_PAGE_KEYS = ASPEK_SIDEBAR_LIST.map((a) => a.id);
+
+export interface TableThemeConfig {
+  id: string;
+  name: string;
+  headerBg: string;
+  headerText: string;
+  subHeaderBg: string;
+  subHeaderText: string;
+  borderColor: string;
+  accentBg: string;
+  badge: string;
+}
+
+export const TABLE_THEMES: Record<string, TableThemeConfig> = {
+  default: {
+    id: 'default',
+    name: 'Hijau Excel (Standar)',
+    headerBg: '#d9d9d9',
+    headerText: '#000000',
+    subHeaderBg: '#92d050',
+    subHeaderText: '#000000',
+    borderColor: '#000000',
+    accentBg: '#f2f2f2',
+    badge: '#92d050'
+  },
+  emerald: {
+    id: 'emerald',
+    name: 'Emerald Formal',
+    headerBg: '#047857',
+    headerText: '#ffffff',
+    subHeaderBg: '#34d399',
+    subHeaderText: '#064e3b',
+    borderColor: '#065f46',
+    accentBg: '#ecfdf5',
+    badge: '#047857'
+  },
+  blue: {
+    id: 'blue',
+    name: 'Biru Edukasi',
+    headerBg: '#0284c7',
+    headerText: '#ffffff',
+    subHeaderBg: '#7dd3fc',
+    subHeaderText: '#0c4a6e',
+    borderColor: '#0369a1',
+    accentBg: '#f0f9ff',
+    badge: '#0284c7'
+  },
+  purple: {
+    id: 'purple',
+    name: 'Ungu Elegan',
+    headerBg: '#6d28d9',
+    headerText: '#ffffff',
+    subHeaderBg: '#c4b5fd',
+    subHeaderText: '#4c1d95',
+    borderColor: '#5b21b6',
+    accentBg: '#f5f3ff',
+    badge: '#6d28d9'
+  },
+  amber: {
+    id: 'amber',
+    name: 'Emas / Amber',
+    headerBg: '#d97706',
+    headerText: '#ffffff',
+    subHeaderBg: '#fcd34d',
+    subHeaderText: '#78350f',
+    borderColor: '#b45309',
+    accentBg: '#fffbeb',
+    badge: '#d97706'
+  },
+  rose: {
+    id: 'rose',
+    name: 'Merah Maroon',
+    headerBg: '#be123c',
+    headerText: '#ffffff',
+    subHeaderBg: '#fda4af',
+    subHeaderText: '#881337',
+    borderColor: '#9f1239',
+    accentBg: '#fff1f2',
+    badge: '#be123c'
+  },
+  grayscale: {
+    id: 'grayscale',
+    name: 'Hitam Putih / Monokrom',
+    headerBg: '#334155',
+    headerText: '#ffffff',
+    subHeaderBg: '#cbd5e1',
+    subHeaderText: '#0f172a',
+    borderColor: '#000000',
+    accentBg: '#f8fafc',
+    badge: '#334155'
+  }
+};
+
+export const FONT_OPTIONS = [
+  { id: 'Arial', name: 'Arial (Standar Bersih)', css: 'Arial, Helvetica, sans-serif' },
+  { id: 'Times New Roman', name: 'Times New Roman (Resmi / Formal)', css: '"Times New Roman", Times, serif' },
+  { id: 'Calibri', name: 'Calibri (Modern)', css: 'Calibri, Candara, Segoe, "Segoe UI", Optima, Arial, sans-serif' },
+  { id: 'Tahoma', name: 'Tahoma (Tegas & Rapi)', css: 'Tahoma, Verdana, Segoe, sans-serif' },
+  { id: 'Georgia', name: 'Georgia (Elegan)', css: 'Georgia, serif' },
+  { id: 'Trebuchet MS', name: 'Trebuchet MS (Dinamis)', css: '"Trebuchet MS", sans-serif' }
+];
+
+export const FONT_SIZES = [
+  { id: 'sm', label: 'Ringkas (10px)', tableFont: '10px', bodyFont: '10.5px', scale: 0.9 },
+  { id: 'base', label: 'Standar (11.5px)', tableFont: '11px', bodyFont: '11.5px', scale: 1 },
+  { id: 'lg', label: 'Besar (13px)', tableFont: '12.5px', bodyFont: '13px', scale: 1.1 }
+];
+
+export const PAPER_SIZES = [
+  { id: 'A4', label: 'A4 (210 × 297 mm)', width: '210mm', height: '297mm', desc: 'Standar Nasional' },
+  { id: 'F4', label: 'F4 / Folio (215 × 330 mm)', width: '215mm', height: '330mm', desc: 'Kertas Fisik Raport' },
+  { id: 'Letter', label: 'Letter (216 × 279 mm)', width: '216mm', height: '279mm', desc: 'Standar Internasional' },
+  { id: 'Legal', label: 'Legal (216 × 356 mm)', width: '216mm', height: '356mm', desc: 'Ukuran Panjang' }
+];
+
+export default function App() {
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path === '/teachers' || hash.includes('teachers')) {
+        return 'teachers';
+      }
+    }
+    return 'home';
+  });
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
+  const [activeTriwulan, setActiveTriwulan] = useState<TriwulanKey>('T1');
+  const [reportTriwulan, setReportTriwulan] = useState<TriwulanKey>('T1');
+  const [expandedTriwulan, setExpandedTriwulan] = useState<TriwulanKey | null>(null);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStudentNum, setSelectedStudentNum] = useState<number>(1);
+  const [printViewMode, setPrintViewMode] = useState<'ringkas' | 'detail'>('detail');
+
+  // Sinkronisasi Route URL: /teachers
+  useEffect(() => {
+    if (currentPage === 'teachers' || currentPage === 'guru_manage') {
+      if (window.location.pathname !== '/teachers') {
+        window.history.pushState(null, '', '/teachers');
+      }
+    } else if (window.location.pathname === '/teachers') {
+      window.history.pushState(null, '', '/');
+    }
+  }, [currentPage]);
+
+  // Handle browser back/forward and hashchange for /teachers
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path === '/teachers' || hash.includes('teachers')) {
+        setCurrentPage('teachers');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
+
+  // Sinkronisasi: Jika berada di halaman aspek, otomatis buka Triwulan yang aktif di accordion
+  useEffect(() => {
+    if (ASPECT_PAGE_KEYS.includes(currentPage)) {
+      setExpandedTriwulan(activeTriwulan);
+    }
+  }, [currentPage, activeTriwulan]);
+
+  const handleToggleTriwulanAccordion = (tKey: TriwulanKey) => {
+    if (expandedTriwulan === tKey) {
+      setExpandedTriwulan(null);
+    } else {
+      // Single-open accordion behavior: hanya satu yang terbuka, yang lain collapse
+      setExpandedTriwulan(tKey);
+      setActiveTriwulan(tKey);
+      setReportTriwulan(tKey);
+      setPrintStatus(`Periode aktif: ${tKey}. Data tersambung ke Triwulan ${tKey.replace('T', '')}.`);
+      setTimeout(() => setPrintStatus(null), 3000);
+    }
+  };
+
+  const handleSelectAspectSubmenu = (tKey: TriwulanKey, aspectId: string) => {
+    setActiveTriwulan(tKey);
+    setReportTriwulan(tKey);
+    setExpandedTriwulan(tKey);
+    setCurrentPage(aspectId);
+    setIsMobileSidebarOpen(false);
+  };
+
+  const { success: toastSuccess, error: toastError, info: toastInfo } = useToast();
+
+  // Authentication & Role-based Access State
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem('rapor_current_user');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Error reading saved user:', e);
+    }
+    return null;
+  });
+
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
+  const [firebaseConnected, setFirebaseConnected] = useState<boolean>(true);
+
+  // Teachers State (stored at Firebase node /teachers)
+  const [teachersList, setTeachersList] = useState<TeacherRecord[]>([]);
+  const [teacherFormData, setTeacherFormData] = useState<Omit<TeacherRecord, 'id'>>({
+    nama: '',
+    tingkatKelas: '4',
+    namaKelas: 'Kelas IV (Fase B)',
+    username: '',
+    password: '',
+    niy: ''
+  });
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+
+  // Master Database Multi-Quarter (T1, T2, T3, T4)
+  const [masterStudents, setMasterStudents] = useState<StudentRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('rapor_master_multiquarter_v2');
+      if (saved) return JSON.parse(saved);
+    } catch (err) {
+      console.warn('LocalStorage error loading masterStudents:', err);
+    }
+    return INITIAL_MASTER_STUDENTS;
+  });
+
+  // Sinkronisasi otomatis ke LocalStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify(masterStudents));
+    } catch (err) {
+      console.warn('LocalStorage error saving masterStudents:', err);
+    }
+  }, [masterStudents]);
+
+  // Derived dataSiswa untuk Triwulan Aktif (digunakan di 9 form penilaian & DBTW)
+  const dataSiswa: SiswaData[] = useMemo(() => {
+    // 1. Jika role Orang Tua, filter HANYA data anak kandungnya
+    let baseList = currentUser?.role === 'orangtua' && currentUser.studentNo
+      ? masterStudents.filter((s) => s.no === currentUser.studentNo || s.nis === currentUser.nisn)
+      : masterStudents;
+
+    // 2. Jika role Guru, isolasi data HANYA untuk kelas binaan guru tersebut agar aman dan terpisah!
+    if (currentUser?.role === 'guru') {
+      const guruTingkat = currentUser.tingkatKelas || '4';
+      const guruKelas = (currentUser.kelas || '').toLowerCase();
+      baseList = baseList.filter((s) => {
+        const sk = (s.kelas || '').toLowerCase();
+        if (guruTingkat === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
+        if (guruTingkat === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (guruTingkat === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (guruTingkat === '3' && sk.includes('iii')) return true;
+        if (guruTingkat === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
+        if (guruTingkat === '6' && sk.includes('vi')) return true;
+        return sk.includes(guruKelas) || guruKelas.includes(sk);
+      });
+    } else if (selectedClassFilter !== 'all') {
+      // 3. Jika Admin atau Tamu memilih filter tingkat kelas tertentu
+      baseList = baseList.filter((s) => {
+        const sk = (s.kelas || '').toLowerCase();
+        if (selectedClassFilter === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
+        if (selectedClassFilter === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (selectedClassFilter === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (selectedClassFilter === '3' && sk.includes('iii')) return true;
+        if (selectedClassFilter === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
+        if (selectedClassFilter === '6' && sk.includes('vi')) return true;
+        return true;
+      });
+    }
+
+    return baseList.map((s) => ({
+      no: s.no,
+      nama: s.nama,
+      nis: s.nis,
+      kelas: s.kelas,
+      tahunAjaran: s.tahunAjaran,
+      ...s.triwulan[activeTriwulan],
+      allTriwulan: s.triwulan
+    }));
+  }, [masterStudents, activeTriwulan, currentUser, selectedClassFilter]);
+
+  // Derived reportSiswa untuk Laporan Rapor & Spider Chart
+  const reportSiswa: SiswaData[] = useMemo(() => {
+    let baseList = currentUser?.role === 'orangtua' && currentUser.studentNo
+      ? masterStudents.filter((s) => s.no === currentUser.studentNo || s.nis === currentUser.nisn)
+      : masterStudents;
+
+    if (currentUser?.role === 'guru') {
+      const guruTingkat = currentUser.tingkatKelas || '4';
+      const guruKelas = (currentUser.kelas || '').toLowerCase();
+      baseList = baseList.filter((s) => {
+        const sk = (s.kelas || '').toLowerCase();
+        if (guruTingkat === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
+        if (guruTingkat === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (guruTingkat === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (guruTingkat === '3' && sk.includes('iii')) return true;
+        if (guruTingkat === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
+        if (guruTingkat === '6' && sk.includes('vi')) return true;
+        return sk.includes(guruKelas) || guruKelas.includes(sk);
+      });
+    } else if (selectedClassFilter !== 'all') {
+      baseList = baseList.filter((s) => {
+        const sk = (s.kelas || '').toLowerCase();
+        if (selectedClassFilter === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
+        if (selectedClassFilter === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (selectedClassFilter === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
+        if (selectedClassFilter === '3' && sk.includes('iii')) return true;
+        if (selectedClassFilter === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
+        if (selectedClassFilter === '6' && sk.includes('vi')) return true;
+        return true;
+      });
+    }
+
+    return baseList.map((s) => ({
+      no: s.no,
+      nama: s.nama,
+      nis: s.nis,
+      kelas: s.kelas,
+      tahunAjaran: s.tahunAjaran,
+      ...s.triwulan[reportTriwulan],
+      allTriwulan: s.triwulan
+    }));
+  }, [masterStudents, reportTriwulan, currentUser, selectedClassFilter]);
+
+  const updateStudentDeskripsiRapor = (no: number, text: string) => {
+    if (currentUser?.role === 'orangtua') return;
+    const targetStudent = masterStudents.find((s) => s.no === no);
+    const updated = masterStudents.map((s) => {
+      if (s.no !== no) return s;
+      const curQ = s.triwulan[activeTriwulan];
+      return {
+        ...s,
+        triwulan: {
+          ...s.triwulan,
+          [activeTriwulan]: { ...curQ, deskripsiRapor: text }
+        }
+      };
+    });
+    setMasterStudents(updated);
+    saveStudentsToFirebase(
+      updated,
+      `Deskripsi refleksi ${targetStudent?.nama || 'siswa'} berhasil disimpan ke Firebase Realtime Database.`
+    );
+  };
+
+  const updateStudentSaranRapor = (no: number, text: string) => {
+    if (currentUser?.role === 'orangtua') return;
+    const targetStudent = masterStudents.find((s) => s.no === no);
+    const updated = masterStudents.map((s) => {
+      if (s.no !== no) return s;
+      const curQ = s.triwulan[activeTriwulan];
+      return {
+        ...s,
+        triwulan: {
+          ...s.triwulan,
+          [activeTriwulan]: { ...curQ, saranRapor: text }
+        }
+      };
+    });
+    setMasterStudents(updated);
+    saveStudentsToFirebase(
+      updated,
+      `Saran perkembangan ${targetStudent?.nama || 'siswa'} berhasil disimpan ke Firebase Realtime Database.`
+    );
+  };
+
+  const updateStudentOverallGrade = (no: number, aspectId: string, grade: string) => {
+    if (currentUser?.role === 'orangtua') return;
+    const targetStudent = masterStudents.find((s) => s.no === no);
+    const updated = masterStudents.map((s) => {
+      if (s.no !== no) return s;
+      const curQ = s.triwulan[activeTriwulan];
+      const curOverall = curQ.overallGrades || {};
+      return {
+        ...s,
+        triwulan: {
+          ...s.triwulan,
+          [activeTriwulan]: {
+            ...curQ,
+            overallGrades: {
+              ...curOverall,
+              [aspectId]: curOverall[aspectId] === grade ? '' : grade
+            }
+          }
+        }
+      };
+    });
+    setMasterStudents(updated);
+    saveStudentsToFirebase(
+      updated,
+      `Predikat akhir aspek ${aspectId.toUpperCase()} untuk ${targetStudent?.nama || 'siswa'} berhasil disimpan ke Firebase.`
+    );
+  };
+
+  const updateStudentIndicator = (no: number, aspectId: string, indKey: string, grade: string) => {
+    if (currentUser?.role === 'orangtua') return;
+    const targetStudent = masterStudents.find((s) => s.no === no);
+    const updated = masterStudents.map((s) => {
+      if (s.no !== no) return s;
+      const curQ = s.triwulan[activeTriwulan];
+      const curSec = (curQ[aspectId as keyof SiswaAssessmentRecord] as Record<string, string>) || {};
+      return {
+        ...s,
+        triwulan: {
+          ...s.triwulan,
+          [activeTriwulan]: {
+            ...curQ,
+            [aspectId]: {
+              ...curSec,
+              [indKey]: curSec[indKey] === grade ? '' : grade
+            }
+          }
+        }
+      };
+    });
+    setMasterStudents(updated);
+    saveStudentsToFirebase(
+      updated,
+      `Penilaian indikator ${indKey.toUpperCase()} (${grade}) untuk ${targetStudent?.nama || 'siswa'} tersimpan ke Firebase.`
+    );
+  };
+
+  // Metadata Rapor dari Sheet Database (Persis KOP Screenshot Asli)
+  const [metaRapor, setMetaRapor] = useState({
+    tanggalRaport: '9 Oktober 2026',
+    tempatRaport: 'Majatengah',
+    kepalaSekolah: {
+      nama: 'Rina Shanty Pratiwi, S.Pd',
+      niy: '91050107202022'
+    },
+    guruKelas: {
+      nama: 'Yuliono Nurokhim, S.Pd',
+      niy: '89070107222028'
+    },
+    kopSekolah: {
+      instansi: 'YAYASAN KHALIMUL KHASAN',
+      namaSekolah: 'SD KHALIMUL KHASAN 1 BILINGUAL SCHOOL',
+      npsn: 'NDS: 1002220005, NSS: 102030206038, NPSN: 20280456',
+      akreditasi: "TERAKREDITASI 'A'",
+      alamat: 'Alamat: Jl. Raya Majatengah Ds. Majatengah Kec. Kemangkon Kab. Purbalingga Pos 53381',
+      kontak: 'E-mail: sdkhalimulkhasan1@gmail.com, Telp: 085227181000',
+      judulRapor: 'LAPORAN PERKEMBANGAN SISWA TRIWULAN I',
+      tahunAjaran: 'TAHUN AJARAN 2026/2027'
+    },
+    judulLaporan: {
+      baris1: 'LAPORAN PERKEMBANGAN SISWA TRIWULAN I',
+      baris2: 'SD KHALIMUL KHASAN 1 BILINGUAL SCHOOL',
+      baris3: 'TAHUN AJARAN 2026/2027'
+    }
+  });
+
+  // 1. SINKRONISASI REALTIME FIREBASE: /students
+  useEffect(() => {
+    const studentsRef = ref(db, 'students');
+    const unsubscribe = onValue(
+      studentsRef,
+      (snapshot: any) => {
+        setFirebaseConnected(true);
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setMasterStudents(val);
+          } else if (typeof val === 'object' && val !== null) {
+            const arr = Object.values(val) as StudentRecord[];
+            if (arr.length > 0) {
+              arr.sort((a, b) => a.no - b.no);
+              setMasterStudents(arr);
+            }
+          }
+        } else {
+          // Inisialisasi awal ke Firebase jika masih kosong
+          set(studentsRef, INITIAL_MASTER_STUDENTS).catch((err: any) =>
+            console.warn('Firebase initial students set error:', err)
+          );
+        }
+      },
+      (error: any) => {
+        console.warn('Firebase /students onValue error:', error);
+        setFirebaseConnected(false);
+      }
+    );
+
+    return () => {
+      off(studentsRef);
+    };
+  }, []);
+
+  // 2. SINKRONISASI REALTIME FIREBASE: /teachers
+  useEffect(() => {
+    const teachersRef = ref(db, 'teachers');
+    const unsubscribe = onValue(
+      teachersRef,
+      (snapshot: any) => {
+        setFirebaseConnected(true);
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          const list: TeacherRecord[] = [];
+          if (typeof val === 'object' && val !== null) {
+            Object.keys(val).forEach((k) => {
+              list.push({ id: k, ...val[k] });
+            });
+          }
+          setTeachersList(list);
+        } else {
+          // Buat data guru default jika kosong (Tingkat 1 s.d. 6)
+          const defaultTeachers: Record<string, Omit<TeacherRecord, 'id'>> = {
+            teacher_4: {
+              nama: 'Yuliono Nurokhim, S.Pd',
+              tingkatKelas: '4',
+              namaKelas: 'Kelas IV (Fase B)',
+              username: 'guru4',
+              password: 'guru4password#',
+              niy: '89070107222028',
+              email: 'yuliono172@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas IV',
+              telepon: '081234567894'
+            },
+            teacher_1: {
+              nama: 'Siti Rahmah, S.Pd.I',
+              tingkatKelas: '1',
+              namaKelas: 'Kelas I (Fase A)',
+              username: 'guru1',
+              password: 'guru1password#',
+              niy: '89070107222021',
+              email: 'siti.rahmah@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas I',
+              telepon: '081234567891'
+            },
+            teacher_2: {
+              nama: 'Ahmad Fauzi, S.Pd',
+              tingkatKelas: '2',
+              namaKelas: 'Kelas II (Fase A)',
+              username: 'guru2',
+              password: 'guru2password#',
+              niy: '89070107222022',
+              email: 'ahmad.fauzi@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas II',
+              telepon: '081234567892'
+            },
+            teacher_3: {
+              nama: 'Dewi Lestari, S.Pd',
+              tingkatKelas: '3',
+              namaKelas: 'Kelas III (Fase B)',
+              username: 'guru3',
+              password: 'guru3password#',
+              niy: '89070107222023',
+              email: 'dewi.lestari@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas III',
+              telepon: '081234567893'
+            },
+            teacher_5: {
+              nama: 'Bambang Pratama, M.Pd',
+              tingkatKelas: '5',
+              namaKelas: 'Kelas V (Fase C)',
+              username: 'guru5',
+              password: 'guru5password#',
+              niy: '89070107222025',
+              email: 'bambang.pratama@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas V',
+              telepon: '081234567895'
+            },
+            teacher_6: {
+              nama: 'Nurul Hidayah, S.Pd',
+              tingkatKelas: '6',
+              namaKelas: 'Kelas VI (Fase C)',
+              username: 'guru6',
+              password: 'guru6password#',
+              niy: '89070107222026',
+              email: 'nurul.hidayah@guru.sd.belajar.id',
+              mataPelajaran: 'Wali Kelas VI',
+              telepon: '081234567896'
+            }
+          };
+          set(teachersRef, defaultTeachers).catch((err: any) =>
+            console.warn('Firebase initial teachers error:', err)
+          );
+        }
+      },
+      (error: any) => {
+        console.warn('Firebase /teachers onValue error:', error);
+      }
+    );
+
+    return () => {
+      off(teachersRef);
+    };
+  }, []);
+
+  // 3. SINKRONISASI REALTIME FIREBASE: /app_settings
+  useEffect(() => {
+    const settingsRef = ref(db, 'app_settings');
+    const unsubscribe = onValue(
+      settingsRef,
+      (snapshot: any) => {
+        setFirebaseConnected(true);
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          setMetaRapor((prev) => ({
+            ...prev,
+            tanggalRaport: val.tanggalRaport || prev.tanggalRaport,
+            tempatRaport: val.tempatRaport || prev.tempatRaport,
+            kepalaSekolah: {
+              nama: val.kepalaSekolahNama || prev.kepalaSekolah.nama,
+              niy: val.kepalaSekolahNiy || prev.kepalaSekolah.niy
+            },
+            guruKelas: {
+              nama: val.guruKelasNama || prev.guruKelas.nama,
+              niy: val.guruKelasNiy || prev.guruKelas.niy
+            },
+            kopSekolah: {
+              ...prev.kopSekolah,
+              instansi: val.instansi || prev.kopSekolah.instansi,
+              namaSekolah: val.namaSekolah || prev.kopSekolah.namaSekolah,
+              npsn: val.npsn || prev.kopSekolah.npsn,
+              akreditasi: val.akreditasi || prev.kopSekolah.akreditasi,
+              alamat: val.alamat || prev.kopSekolah.alamat,
+              kontak: val.kontak || prev.kopSekolah.kontak,
+              tahunAjaran: val.tahunAjaran || prev.kopSekolah.tahunAjaran,
+              judulRapor: val.activeTriwulan
+                ? `LAPORAN PERKEMBANGAN SISWA ${val.activeTriwulan === 'T1' ? 'TRIWULAN I' : val.activeTriwulan === 'T2' ? 'TRIWULAN II' : val.activeTriwulan === 'T3' ? 'TRIWULAN III' : 'TRIWULAN IV'}`
+                : prev.kopSekolah.judulRapor
+            },
+            judulLaporan: {
+              baris1: val.activeTriwulan
+                ? `LAPORAN PERKEMBANGAN SISWA ${val.activeTriwulan === 'T1' ? 'TRIWULAN I' : val.activeTriwulan === 'T2' ? 'TRIWULAN II' : val.activeTriwulan === 'T3' ? 'TRIWULAN III' : 'TRIWULAN IV'}`
+                : prev.judulLaporan.baris1,
+              baris2: val.namaSekolah || prev.judulLaporan.baris2,
+              baris3: val.tahunAjaran ? `TAHUN AJARAN ${val.tahunAjaran}` : prev.judulLaporan.baris3
+            }
+          }));
+
+          if (val.activeTriwulan && ['T1', 'T2', 'T3', 'T4'].includes(val.activeTriwulan)) {
+            setActiveTriwulan(val.activeTriwulan as TriwulanKey);
+            setReportTriwulan(val.activeTriwulan as TriwulanKey);
+          }
+        }
+      },
+      (error: any) => {
+        console.warn('Firebase /app_settings onValue error:', error);
+      }
+    );
+
+    return () => {
+      off(settingsRef);
+    };
+  }, []);
+
+  // Simpan user sesi ke localStorage
+  useEffect(() => {
+    try {
+      if (currentUser) {
+        localStorage.setItem('rapor_current_user', JSON.stringify(currentUser));
+      } else {
+        localStorage.removeItem('rapor_current_user');
+      }
+    } catch (e) {
+      console.warn('Error saving user session:', e);
+    }
+  }, [currentUser]);
+
+  // Otomatis kunci dropdown siswa jika user adalah orang tua
+  useEffect(() => {
+    if (currentUser?.role === 'orangtua' && currentUser.studentNo) {
+      setSelectedStudentNum(currentUser.studentNo);
+    }
+  }, [currentUser]);
+
+  // FUNGSI SIMPAN DATA SISWA KE FIREBASE DENGAN TOAST NOTIFICATION
+  const saveStudentsToFirebase = async (newStudents: StudentRecord[], customMsg?: string) => {
+    setIsFirebaseSyncing(true);
+    try {
+      const studentsRef = ref(db, 'students');
+      await set(studentsRef, newStudents);
+      setMasterStudents(newStudents);
+      toastSuccess(
+        'Data Siswa Berhasil Disimpan',
+        customMsg || 'Data penilaian siswa berhasil diperbarui ke Firebase Realtime Database.'
+      );
+    } catch (err: any) {
+      console.error('Gagal menyimpan siswa ke Firebase:', err);
+      toastError('Gagal Menyimpan Data Siswa', err?.message || 'Terjadi kesalahan jaringan Firebase.');
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
+
+  // FUNGSI SIMPAN/UPDATE DATA GURU KE FIREBASE DENGAN TOAST NOTIFICATION
+  const handleSaveTeacher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherFormData.nama.trim() || !teacherFormData.username.trim() || !teacherFormData.password.trim()) {
+      toastError('Form Tidak Lengkap', 'Nama, Username, dan Password guru wajib diisi!');
+      return;
+    }
+
+    setIsFirebaseSyncing(true);
+    try {
+      const teacherId = editingTeacherId || `teacher_${Date.now()}`;
+      const teacherRef = ref(db, `teachers/${teacherId}`);
+      await set(teacherRef, teacherFormData);
+
+      toastSuccess(
+        editingTeacherId ? 'Data Guru Berhasil Diperbarui' : 'Data Guru Berhasil Ditambahkan',
+        `Akun guru "${teacherFormData.nama}" berhasil tersimpan ke Firebase node /teachers.`
+      );
+
+      // Reset form
+      setTeacherFormData({
+        nama: '',
+        tingkatKelas: '4',
+        namaKelas: 'Kelas IV (Fase B)',
+        username: '',
+        password: '',
+        niy: ''
+      });
+      setEditingTeacherId(null);
+    } catch (err: any) {
+      console.error('Error saving teacher:', err);
+      toastError('Gagal Menyimpan Guru', err?.message || 'Gagal menyimpan ke Firebase Realtime Database.');
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
+
+  // FUNGSI HAPUS GURU DARI FIREBASE DENGAN TOAST NOTIFICATION
+  const handleDeleteTeacher = async (id: string, name: string) => {
+    if (!confirm(`Yakin ingin menghapus guru "${name}"?`)) return;
+    setIsFirebaseSyncing(true);
+    try {
+      const teacherRef = ref(db, `teachers/${id}`);
+      await remove(teacherRef);
+      toastSuccess('Data Guru Berhasil Dihapus', `Data guru "${name}" telah dihapus dari Firebase.`);
+    } catch (err: any) {
+      console.error('Error deleting teacher:', err);
+      toastError('Gagal Menghapus Guru', err?.message || 'Gagal menghapus dari Firebase.');
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
+
+  // FUNGSI SIMPAN PERSONALISASI APLIKASI (APP SETTINGS) KE FIREBASE
+  const handleSaveAppSettings = async () => {
+    setIsFirebaseSyncing(true);
+    try {
+      const settingsRef = ref(db, 'app_settings');
+      const payload: AppSettings = {
+        instansi: metaRapor.kopSekolah.instansi,
+        namaSekolah: metaRapor.kopSekolah.namaSekolah,
+        npsn: metaRapor.kopSekolah.npsn,
+        akreditasi: metaRapor.kopSekolah.akreditasi,
+        alamat: metaRapor.kopSekolah.alamat,
+        kontak: metaRapor.kopSekolah.kontak,
+        activeTriwulan,
+        tahunAjaran: metaRapor.kopSekolah.tahunAjaran,
+        tempatRaport: metaRapor.tempatRaport,
+        tanggalRaport: metaRapor.tanggalRaport,
+        kepalaSekolahNama: metaRapor.kepalaSekolah.nama,
+        kepalaSekolahNiy: metaRapor.kepalaSekolah.niy
+      };
+      await set(settingsRef, payload);
+      toastSuccess(
+        'Pengaturan Personalisasi Disimpan',
+        'Nama sekolah, kop surat, periode aktif, dan tahun ajaran berhasil disimpan ke Firebase /app_settings secara realtime.'
+      );
+    } catch (err: any) {
+      console.error('Error saving app settings:', err);
+      toastError('Gagal Menyimpan Pengaturan', err?.message || 'Gagal tersambung ke Firebase.');
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
+
+  // FUNGSI LOGIN DENGAN DETEKSI ROLE OTOMATIS
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setIsLoggingIn(true);
+
+    const inputUser = loginForm.username.trim();
+    const inputPass = loginForm.password.trim();
+
+    if (!inputUser || !inputPass) {
+      setLoginError('Silakan masukkan username dan password!');
+      setIsLoggingIn(false);
+      return;
+    }
+
+    // 1. Cek Admin
+    if (inputUser === 'admin333221' && inputPass === 'admin333221#') {
+      const adminUser: UserAccount = {
+        role: 'admin',
+        username: 'admin333221',
+        nama: 'Administrator Sekolah'
+      };
+      setCurrentUser(adminUser);
+      setIsLoggingIn(false);
+      setLoginForm({ username: '', password: '' });
+      toastSuccess('Login Berhasil', 'Selamat datang kembali, Administrator Sekolah!');
+      return;
+    }
+
+    // 2. Cek Guru dari realtime list teachers
+    const matchedTeacher = teachersList.find(
+      (t) => t.username.toLowerCase() === inputUser.toLowerCase() && t.password === inputPass
+    );
+    if (matchedTeacher) {
+      const guruUser: UserAccount = {
+        role: 'guru',
+        username: matchedTeacher.username,
+        nama: matchedTeacher.nama,
+        kelas: matchedTeacher.namaKelas,
+        tingkatKelas: matchedTeacher.tingkatKelas
+      };
+      setCurrentUser(guruUser);
+      setIsLoggingIn(false);
+      setLoginForm({ username: '', password: '' });
+      toastSuccess('Login Berhasil', `Selamat datang, Ibu/Bapak ${matchedTeacher.nama} (${matchedTeacher.namaKelas})!`);
+      return;
+    }
+
+    // 3. Cek Orang Tua (NISN / NIS Siswa)
+    const matchedStudent = masterStudents.find(
+      (s) => s.nis.trim() === inputUser && s.nis.trim() === inputPass
+    );
+    if (matchedStudent) {
+      const parentUser: UserAccount = {
+        role: 'orangtua',
+        username: matchedStudent.nis,
+        nama: `Orang Tua dari ${matchedStudent.nama}`,
+        nisn: matchedStudent.nis,
+        studentNo: matchedStudent.no,
+        kelas: matchedStudent.kelas
+      };
+      setCurrentUser(parentUser);
+      setSelectedStudentNum(matchedStudent.no);
+      setIsLoggingIn(false);
+      setLoginForm({ username: '', password: '' });
+      toastSuccess(
+        'Login Berhasil (Akses Orang Tua)',
+        `Selamat datang! Membuka data rapor ananda ${matchedStudent.nama}. Mode Read-Only aktif.`
+      );
+      return;
+    }
+
+    setIsLoggingIn(false);
+    setLoginError('Username atau Password tidak cocok! Periksa kembali kredensial Anda.');
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setCurrentPage('home');
+    toastInfo('Logout Berhasil', 'Anda telah keluar dari aplikasi Rapor Siswa.');
+  };
+
+  const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [isFullscreenPrint, setIsFullscreenPrint] = useState<boolean>(false);
+  const [showKopSekolah, setShowKopSekolah] = useState<boolean>(true);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [tableHeaderStyle, setTableHeaderStyle] = useState<'screenshot2' | 'screenshot1'>('screenshot2');
+  const [studentInfoStyle, setStudentInfoStyle] = useState<'table' | 'simple'>('simple');
+  const [reportViewMode, setReportViewMode] = useState<'document' | 'spider_chart'>('document');
+  
+  // Personalisasi Lembar Laporan (Font, Ukuran, dan Warna Tabel)
+  const [reportFontFamily, setReportFontFamily] = useState<'Arial' | 'Times New Roman' | 'Calibri' | 'Tahoma' | 'Georgia' | 'Trebuchet MS'>(() => {
+    try {
+      return (localStorage.getItem('rapor_font_family') as any) || 'Arial';
+    } catch {
+      return 'Arial';
+    }
+  });
+  const [reportFontSize, setReportFontSize] = useState<'sm' | 'base' | 'lg'>(() => {
+    try {
+      return (localStorage.getItem('rapor_font_size') as any) || 'base';
+    } catch {
+      return 'base';
+    }
+  });
+  const [tableThemeColor, setTableThemeColor] = useState<string>(() => {
+    try {
+      return localStorage.getItem('rapor_table_theme') || 'default';
+    } catch {
+      return 'default';
+    }
+  });
+
+  // State Dialog Unduh Dokumen (Semua Rapor vs Satu Rapor, PDF vs DOCX, Pilihan Lokasi)
+  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
+  const [downloadScope, setDownloadScope] = useState<'single' | 'all'>('single');
+  const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf');
+  const [saveLocationMode, setSaveLocationMode] = useState<'picker' | 'direct'>('picker');
+  const [isProcessingExport, setIsProcessingExport] = useState<boolean>(false);
+
+  // State Pengaturan Kertas & Printer
+  const [paperSize, setPaperSize] = useState<'A4' | 'F4' | 'Letter' | 'Legal'>('A4');
+  const [paperOrientation, setPaperOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [paperMargin, setPaperMargin] = useState<'normal' | 'narrow' | 'wide'>('normal');
+  const [printColorMode, setPrintColorMode] = useState<'color' | 'grayscale'>('color');
+  const [printScale, setPrintScale] = useState<number>(100);
+  const [printScope, setPrintScope] = useState<'single' | 'all'>('single');
+
+  // Simpan preferensi font & tema ke localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('rapor_font_family', reportFontFamily);
+      localStorage.setItem('rapor_font_size', reportFontSize);
+      localStorage.setItem('rapor_table_theme', tableThemeColor);
+    } catch (err) {
+      console.warn('LocalStorage save error for table style:', err);
+    }
+  }, [reportFontFamily, reportFontSize, tableThemeColor]);
+  const [selectedSpiderAspect, setSelectedSpiderAspect] = useState<string | null>(null);
+  const [spiderHoveredAspect, setSpiderHoveredAspect] = useState<string | null>(null);
+  const [trendChartMode, setTrendChartMode] = useState<'area' | 'bar' | 'dimension'>('area');
+  const [selectedTrendAspectId, setSelectedTrendAspectId] = useState<string>('kognitif');
+  const [showPredictionInSpider, setShowPredictionInSpider] = useState<boolean>(true);
+
+  const kopFileInputRef = useRef<HTMLInputElement | null>(null);
+  const dbKopFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // State Kop Gambar yang diunggah pengguna (disimpan permanen di localStorage)
+  const [uploadedKopImage, setUploadedKopImage] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('rapor_uploaded_kop') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleKopFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setUploadedKopImage(base64);
+        try {
+          localStorage.setItem('rapor_uploaded_kop', base64);
+        } catch (err) {
+          console.warn('LocalStorage error saving kop:', err);
+        }
+        setPrintStatus('Kop berhasil diunggah dan langsung dipasang!');
+        setTimeout(() => setPrintStatus(null), 4000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveUploadedKop = () => {
+    setUploadedKopImage(null);
+    try {
+      localStorage.removeItem('rapor_uploaded_kop');
+    } catch (err) {
+      console.warn('LocalStorage error removing kop:', err);
+    }
+    setPrintStatus('Kop kustom dihapus, kembali ke kop standar.');
+    setTimeout(() => setPrintStatus(null), 3000);
+  };
+
+  // Helper Generic Updater - Memperbarui masterStudents pada activeTriwulan
+  const updateStudentField = (
+    no: number,
+    section: keyof SiswaAssessmentRecord,
+    field: string,
+    value: string
+  ) => {
+    if (currentUser?.role === 'orangtua') return;
+    const targetStudent = masterStudents.find((s) => s.no === no);
+    const updated = masterStudents.map((s) => {
+      if (s.no !== no) return s;
+      const curQ = s.triwulan[activeTriwulan];
+      const curSec = (curQ[section] as Record<string, string>) || {};
+      return {
+        ...s,
+        triwulan: {
+          ...s.triwulan,
+          [activeTriwulan]: {
+            ...curQ,
+            [section]: {
+              ...curSec,
+              [field]: value
+            }
+          }
+        }
+      };
+    });
+    setMasterStudents(updated);
+    saveStudentsToFirebase(
+      updated,
+      `Penilaian ${section} (${field}) untuk ${targetStudent?.nama || 'siswa'} tersimpan ke Firebase.`
+    );
+  };
+
+  const filteredSiswa = dataSiswa.filter(
+    (s) =>
+      s.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.nis.includes(searchTerm)
+  );
+
+  const fallbackSiswaItem: SiswaData = useMemo(() => {
+    const s = masterStudents[0];
+    return {
+      no: s?.no || 1,
+      nama: s?.nama || 'Siswa Kelas',
+      nis: s?.nis || '000000',
+      kelas: s?.kelas || 'Kelas IV',
+      tahunAjaran: s?.tahunAjaran || '2026/2027',
+      ...(s?.triwulan?.[activeTriwulan] || createEmptyAssessmentRecord()),
+      allTriwulan: s?.triwulan
+    };
+  }, [masterStudents, activeTriwulan]);
+
+  const selectedStudent = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0] || fallbackSiswaItem;
+  const selectedReportStudent = reportSiswa.find((s) => s.no === selectedStudentNum) || reportSiswa[0] || selectedStudent;
+  const selectedMasterStudent = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0];
+
+  // Komponen Banner Identitas Periode Aktif (Requirement 4)
+  const renderPeriodeBanner = (aspekLabel?: string) => {
+    const curOpt = TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan) || TRIWULAN_OPTIONS[0];
+    return (
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-2 border-amber-400 rounded-xl p-3 sm:p-4 text-white shadow-md flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black text-sm shadow-md border-2 border-white/40 shrink-0">
+            {curOpt.short}
+          </div>
+          <div>
+            <div className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+              <span>PERIODE PENILAIAN AKTIF:</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black">
+                {curOpt.label}
+              </span>
+            </div>
+            <div className="text-xs sm:text-sm font-black text-white uppercase tracking-tight">
+              RAPOR SISWA KELAS IV • {curOpt.label} {aspekLabel ? `• ${aspekLabel}` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 bg-black/60 p-1.5 rounded-xl border border-white/20 shadow-inner">
+          <span className="text-[11px] font-bold text-slate-300 px-2 hidden sm:inline">Pilih Periode:</span>
+          {TRIWULAN_OPTIONS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => {
+                setActiveTriwulan(t.id);
+                setPrintStatus(`Periode penilaian aktif beralih ke ${t.label}. Seluruh lembar penilaian terhubung ke data ${t.label}.`);
+                setTimeout(() => setPrintStatus(null), 3500);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer border ${
+                activeTriwulan === t.id
+                  ? 'bg-amber-500 text-black border-white shadow-md ring-2 ring-white scale-102 font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10 border-transparent'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Generator Dokumen HTML Rapor Lengkap, Mandiri & Berwarna 100% Persis Format Sekolah
+  // Generator Konten Lembar Rapor Siswa (Body HTML Mandiri)
+  const generateSingleReportBodyHTML = (
+    student: SiswaData,
+    isDetailMode: boolean = true,
+    withKop: boolean = true,
+    customKop: string | null = uploadedKopImage,
+    tblStyle: 'screenshot2' | 'screenshot1' = tableHeaderStyle,
+    infoStyle: 'table' | 'simple' = studentInfoStyle,
+    options?: {
+      fontFamily?: string;
+      fontSize?: 'sm' | 'base' | 'lg';
+      themeColor?: string;
+      colorMode?: 'color' | 'grayscale';
+    }
+  ) => {
+    const studentDeskripsi = student.deskripsiRapor ?? generateDefaultDeskripsi(student);
+    const studentSaran = student.saranRapor ?? generateDefaultSaran(student);
+
+    const chosenThemeKey = options?.themeColor || tableThemeColor;
+    const themeConf = TABLE_THEMES[chosenThemeKey] || TABLE_THEMES.default;
+    const chosenSizeKey = options?.fontSize || reportFontSize;
+    const sizeConf = FONT_SIZES.find((s) => s.id === chosenSizeKey) || FONT_SIZES[1];
+    const isGray = (options?.colorMode || printColorMode) === 'grayscale';
+
+    const headerBgColor = isGray ? '#334155' : themeConf.headerBg;
+    const subHeaderBgColor = isGray ? '#cbd5e1' : themeConf.subHeaderBg;
+    const tableBorderColor = isGray ? '#000000' : themeConf.borderColor;
+    const accentBgColor = isGray ? '#f1f5f9' : themeConf.accentBg;
+
+    const rowsHtml = ASPEK_LIST.map((aspek) => {
+      if (isDetailMode) {
+        return aspek.indikatorList
+          .map((ind, indIdx) => {
+            const sec = (student[aspek.id as keyof SiswaData] as Record<string, string>) || {};
+            const val = sec[ind.key] || '';
+
+            const noTd = indIdx === 0
+              ? `<td rowspan="${aspek.indikatorList.length}" style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; vertical-align: middle; width: 35px; background-color: #ffffff;">${aspek.no}</td>`
+              : '';
+            const aspekTd = indIdx === 0
+              ? `<td rowspan="${aspek.indikatorList.length}" style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; text-transform: uppercase; font-size: ${sizeConf.tableFont}; vertical-align: middle; width: 130px; background-color: #ffffff;">${aspek.nama}</td>`
+              : '';
+
+            return `
+              <tr style="background-color: #ffffff;">
+                ${noTd}
+                ${aspekTd}
+                <td style="border: 1px solid ${tableBorderColor}; text-align: left; padding: 4px 6px; font-size: ${sizeConf.tableFont}; color: #000;">
+                  ${ind.labelLengkap}
+                </td>
+                <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; width: 85px; color: #000;">${val === 'Exceptional' ? '✓' : ''}</td>
+                <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; width: 45px; color: #000;">${val === 'A' ? '✓' : ''}</td>
+                <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; width: 45px; color: #000;">${val === 'B' ? '✓' : ''}</td>
+                <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; width: 45px; color: #000;">${val === 'C' ? '✓' : ''}</td>
+                <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; width: 55px; color: #000;">${val === 'Defisit' ? '✓' : ''}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      const grade = getAspectGrade(student, aspek.id);
+      return `
+        <tr style="background-color: #ffffff;">
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; width: 35px;">${aspek.no}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: ${sizeConf.tableFont}; text-transform: uppercase; width: 130px;">${aspek.nama}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: left; padding: 5px 8px; font-size: ${sizeConf.tableFont};">${aspek.kategori}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; color: #000;">${grade === 'Exceptional' ? '✓' : ''}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; color: #000;">${grade === 'A' ? '✓' : ''}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; color: #000;">${grade === 'B' ? '✓' : ''}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; color: #000;">${grade === 'C' ? '✓' : ''}</td>
+          <td style="border: 1px solid ${tableBorderColor}; text-align: center; font-weight: bold; font-size: 14px; color: #000;">${grade === 'Defisit' ? '✓' : ''}</td>
+        </tr>
+      `;
+    }).join('');
+
+    let kopHtml = '';
+    if (customKop) {
+      kopHtml = `
+        <div style="text-align: center; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 4px;">
+          <img src="${customKop}" style="max-width: 100%; max-height: 145px; object-fit: contain;" alt="Kop Surat Sekolah" />
+        </div>
+      `;
+    } else if (withKop) {
+      kopHtml = `
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+            <div style="width: 75px; height: 75px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+              <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
+                <circle cx="50" cy="50" r="47" fill="#0070c0" stroke="#ffc000" stroke-width="3.5" />
+                <circle cx="50" cy="50" r="39" fill="#ffffff" stroke="#0070c0" stroke-width="2" />
+                <path d="M 27 58 Q 50 48 50 63 Q 50 48 73 58 L 73 42 Q 50 33 50 47 Q 50 33 27 42 Z" fill="#00b050" stroke="#004d00" stroke-width="1.5" />
+                <polygon points="50,23 53,31 62,31 55,36 58,44 50,39 42,44 45,36 38,31 47,31" fill="#ffc000" stroke="#b38600" stroke-width="1" />
+                <text x="50" y="78" text-anchor="middle" font-size="6.5" font-weight="900" fill="#002060" font-family="sans-serif">SD KHALIMUL KHASAN</text>
+                <text x="50" y="85" text-anchor="middle" font-size="5.5" font-weight="800" fill="#c00000" font-family="sans-serif">BILINGUAL SCHOOL</text>
+              </svg>
+            </div>
+            <div style="flex: 1; text-align: center; padding: 0 10px;">
+              <div style="font-size: 13px; font-weight: 800; text-transform: uppercase; color: #222; letter-spacing: 0.5px;">${metaRapor.kopSekolah.instansi}</div>
+              <div style="font-size: 18px; font-weight: 900; text-transform: uppercase; color: #000; margin: 2px 0;">${metaRapor.kopSekolah.namaSekolah}</div>
+              <div style="font-size: 11px; font-weight: bold; color: #333;">NPSN: ${metaRapor.kopSekolah.npsn} • ${metaRapor.kopSekolah.akreditasi}</div>
+              <div style="font-size: 10px; color: #444;">${metaRapor.kopSekolah.alamat}</div>
+              <div style="font-size: 9.5px; color: #666; font-style: italic;">${metaRapor.kopSekolah.kontak}</div>
+            </div>
+            <div style="width: 75px; height: 75px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+              <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
+                <polygon points="50,6 94,84 6,84" fill="#0070c0" stroke="#ffc000" stroke-width="3" />
+                <polygon points="50,18 84,80 16,80" fill="#ffffff" />
+                <circle cx="50" cy="42" r="14" fill="#ffc000" stroke="#b38600" stroke-width="1" />
+                <path d="M 50 32 L 53 45 L 47 45 Z" fill="#c00000" />
+                <path d="M 32 64 Q 50 56 68 64 Q 50 72 32 64 Z" fill="#0070c0" />
+                <text x="50" y="74" text-anchor="middle" font-size="6.5" font-weight="900" fill="#002060" font-family="sans-serif">TUT WURI HANDAYANI</text>
+              </svg>
+            </div>
+          </div>
+          <div style="border-bottom: 3px solid #000; margin-top: 8px;"></div>
+          <div style="border-bottom: 1px solid #000; margin-top: 1.5px;"></div>
+        </div>
+      `;
+    }
+
+    const studentInfoHtml = infoStyle === 'simple' ? `
+      <div style="margin-bottom: 12px; font-size: 11px; font-weight: bold; line-height: 1.6;">
+        <table style="border: none; width: auto; margin-bottom: 0;">
+          <tr>
+            <td style="border: none; padding: 1px 4px; font-weight: bold; width: 95px; font-size: 11px;">Nama Siswa</td>
+            <td style="border: none; padding: 1px 4px; font-weight: 900; text-transform: uppercase; font-size: 11.5px;">: ${student.nama}</td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 4px; font-weight: bold; font-size: 11px;">NIS</td>
+            <td style="border: none; padding: 1px 4px; font-family: monospace; font-weight: bold; font-size: 11px;">: ${student.nis}</td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 4px; font-weight: bold; font-size: 11px;">Kelas</td>
+            <td style="border: none; padding: 1px 4px; font-weight: bold; font-size: 11px;">: ${student.kelas}</td>
+          </tr>
+        </table>
+      </div>
+    ` : `
+      <div style="border: 1.5px solid ${tableBorderColor}; margin-bottom: 12px; background-color: #ffffff;">
+        <div style="background-color: ${headerBgColor}; color: ${themeConf.headerText}; border-bottom: 1.5px solid ${tableBorderColor}; padding: 4px; text-align: center; font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">
+          IDENTITAS PESERTA DIDIK
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 0;">
+          <tbody>
+            <tr style="border-bottom: 1px solid ${tableBorderColor};">
+              <td style="width: 25%; padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Nama Peserta Didik</td>
+              <td style="width: 35%; padding: 4px 6px; font-weight: 900; text-transform: uppercase; border-right: 1.5px solid ${tableBorderColor};">: ${student.nama}</td>
+              <td style="width: 20%; padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Kelas / Rombel</td>
+              <td style="width: 20%; padding: 4px 6px; font-weight: bold;">: ${student.kelas}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid ${tableBorderColor};">
+              <td style="padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Nomor Induk Siswa (NIS)</td>
+              <td style="padding: 4px 6px; font-weight: bold; font-family: monospace; border-right: 1.5px solid ${tableBorderColor};">: ${student.nis}</td>
+              <td style="padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Fase / Semester</td>
+              <td style="padding: 4px 6px; font-weight: bold;">: Fase B / Semester I (Ganjil)</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Nama Sekolah</td>
+              <td style="padding: 4px 6px; font-weight: bold; border-right: 1.5px solid ${tableBorderColor};">: ${metaRapor.kopSekolah.namaSekolah}</td>
+              <td style="padding: 4px 6px; font-weight: bold; background-color: ${accentBgColor}; border-right: 1px solid ${tableBorderColor};">Tanggal Raport</td>
+              <td style="padding: 4px 6px; font-weight: bold;">: ${metaRapor.tempatRaport ? `${metaRapor.tempatRaport}, ` : ''}${metaRapor.tanggalRaport}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const tableHeaderHtml = tblStyle === 'screenshot2' ? `
+      <thead>
+        <tr style="border-bottom: 1.5px solid ${tableBorderColor}; text-align: center; font-weight: 900; font-size: ${sizeConf.tableFont};">
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 6px 4px; width: 35px; background-color: ${headerBgColor}; color: ${themeConf.headerText};" rowspan="2">NO</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 6px 8px; width: 130px; background-color: ${headerBgColor}; color: ${themeConf.headerText};" rowspan="2">ASPEK</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 6px 8px; text-align: center; background-color: ${headerBgColor}; color: ${themeConf.headerText};" rowspan="2">INDIKATOR KEBERHASILAN</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 5px; text-align: center; background-color: ${headerBgColor}; color: ${themeConf.headerText};" colspan="5">PENILAIAN</th>
+        </tr>
+        <tr style="border-bottom: 1.5px solid ${tableBorderColor}; text-align: center; font-weight: 900; font-size: ${sizeConf.tableFont}; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 4px; width: 95px; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">Exceptional</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 4px; width: 45px; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">A</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 4px; width: 45px; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">B</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 4px; width: 45px; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">C</th>
+          <th style="border: 1.5px solid ${tableBorderColor}; padding: 4px; width: 60px; background-color: ${subHeaderBgColor}; color: ${themeConf.subHeaderText};">Defisit</th>
+        </tr>
+      </thead>
+    ` : `
+      <thead>
+        <tr style="border-bottom: 1.5px solid #000; text-align: center; font-weight: 900; font-size: 11px;">
+          <th style="border: 1.5px solid #000; padding: 5px; width: 35px; background-color: #d9d9d9; color: #000;">NO</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 130px; background-color: #d9d9d9; color: #000;">ASPEK</th>
+          <th style="border: 1.5px solid #000; padding: 5px; text-align: left; background-color: #d9d9d9; color: #000;">ASPEK PENILAIAN / PERKEMBANGAN</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 95px; background-color: #7030a0; color: #ffffff;">EXCEPTIONAL</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 50px; background-color: #00b050; color: #ffffff;">A</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 50px; background-color: #0070c0; color: #ffffff;">B</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 50px; background-color: #ffc000; color: #000000;">C</th>
+          <th style="border: 1.5px solid #000; padding: 5px; width: 60px; background-color: #c00000; color: #ffffff;">DEFISIT</th>
+        </tr>
+      </thead>
+    `;
+
+    return `
+      <!-- KOP SEKOLAH -->
+      ${kopHtml}
+
+      <!-- 3 BARIS JUDUL LAPORAN DARI DATABASE -->
+      <div style="text-align: center; margin: 10px 0 14px 0;">
+        ${metaRapor.judulLaporan.baris1 ? `<div style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; color: #000;">${metaRapor.judulLaporan.baris1}</div>` : ''}
+        ${metaRapor.judulLaporan.baris2 ? `<div style="font-size: 13px; font-weight: 800; text-transform: uppercase; color: #111; margin-top: 2px;">${metaRapor.judulLaporan.baris2}</div>` : ''}
+        ${metaRapor.judulLaporan.baris3 ? `<div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #333; margin-top: 2px;">${metaRapor.judulLaporan.baris3}</div>` : ''}
+      </div>
+
+      <!-- IDENTITAS SISWA -->
+      ${studentInfoHtml}
+
+      <!-- TABEL PENILAIAN CENTANG 9 ASPEK -->
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; border: 1.5px solid ${tableBorderColor};">
+        ${tableHeaderHtml}
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <!-- REFLEKSI PERKEMBANGAN SISWA -->
+      <div style="border: 1px solid #000; margin-bottom: 12px; background-color: #ffffff;">
+        <div style="border-bottom: 1px solid #000; padding: 4px 8px; font-weight: bold; font-size: 11px; text-transform: uppercase; background-color: #ffffff; color: #000;">
+          Refleksi Perkembangan Siswa:
+        </div>
+        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.5; color: #000; white-space: pre-wrap; min-height: 45px;">
+          ${studentDeskripsi}
+        </div>
+      </div>
+
+      <!-- SARAN -->
+      <div style="border: 1px solid #000; margin-bottom: 16px; background-color: #ffffff;">
+        <div style="border-bottom: 1px solid #000; padding: 4px 8px; font-weight: bold; font-size: 11px; text-transform: uppercase; background-color: #ffffff; color: #000;">
+          Saran:
+        </div>
+        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.5; color: #000; white-space: pre-wrap; min-height: 45px;">
+          ${studentSaran}
+        </div>
+      </div>
+
+      <!-- KOLOM TANDA TANGAN (HANYA KEPALA SEKOLAH DAN GURU KELAS SEJAJAR) -->
+      <div style="margin-top: 18px;">
+        <table style="width: 100%; border: none; margin-bottom: 0;">
+          <tbody>
+            <tr style="text-align: center; vertical-align: top;">
+              <td style="width: 50%; border: none; font-size: 11px; text-align: center;">
+                Mengetahui,<br><strong>Kepala Sekolah</strong><br><br><br><br><br>
+                <strong style="text-decoration: underline; text-transform: uppercase; font-size: 11.5px;">${metaRapor.kepalaSekolah.nama}</strong><br>
+                <span style="font-family: monospace; font-size: 10px;">NIY. ${metaRapor.kepalaSekolah.niy}</span>
+              </td>
+              <td style="width: 50%; border: none; font-size: 11px; text-align: center;">
+                ${metaRapor.tempatRaport}, ${metaRapor.tanggalRaport}<br>
+                <strong>Guru Kelas IV</strong><br><br><br><br><br>
+                <strong style="text-decoration: underline; text-transform: uppercase; font-size: 11.5px;">${metaRapor.guruKelas.nama}</strong><br>
+                <span style="font-family: monospace; font-size: 10px;">NIY. ${metaRapor.guruKelas.niy}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  // Generator Dokumen HTML Rapor Lengkap, Mandiri & Siap Cetak
+  const generateFullReportHTML = (
+    student: SiswaData,
+    isDetailMode: boolean = true,
+    withKop: boolean = true,
+    customKop: string | null = uploadedKopImage,
+    tblStyle: 'screenshot2' | 'screenshot1' = tableHeaderStyle,
+    infoStyle: 'table' | 'simple' = studentInfoStyle,
+    options?: {
+      fontFamily?: string;
+      fontSize?: 'sm' | 'base' | 'lg';
+      themeColor?: string;
+      paperSize?: 'A4' | 'F4' | 'Letter' | 'Legal';
+      paperOrientation?: 'portrait' | 'landscape';
+      paperMargin?: 'normal' | 'narrow' | 'wide';
+      colorMode?: 'color' | 'grayscale';
+      scale?: number;
+      autoPrint?: boolean;
+    }
+  ) => {
+    const chosenFontKey = options?.fontFamily || reportFontFamily;
+    const fontConf = FONT_OPTIONS.find((f) => f.id === chosenFontKey) || FONT_OPTIONS[0];
+    const chosenSizeKey = options?.fontSize || reportFontSize;
+    const sizeConf = FONT_SIZES.find((s) => s.id === chosenSizeKey) || FONT_SIZES[1];
+    const pSize = options?.paperSize || paperSize;
+    const pOrient = options?.paperOrientation || paperOrientation;
+    const pMargin = options?.paperMargin || paperMargin;
+    const isGray = (options?.colorMode || printColorMode) === 'grayscale';
+    const scaleVal = (options?.scale ?? printScale) / 100;
+    const shouldAutoPrint = options?.autoPrint ?? true;
+
+    const marginMap = {
+      normal: '8mm 10mm',
+      narrow: '4mm 6mm',
+      wide: '14mm 16mm'
+    };
+    const sizeMap = {
+      A4: '210mm 297mm',
+      F4: '215mm 330mm',
+      Letter: '216mm 279mm',
+      Legal: '216mm 356mm'
+    };
+
+    const bodyContent = generateSingleReportBodyHTML(
+      student,
+      isDetailMode,
+      withKop,
+      customKop,
+      tblStyle,
+      infoStyle,
+      options
+    );
+
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Rapor_${student.nama}_${student.nis}</title>
+  <style>
+    @page {
+      size: ${sizeMap[pSize] || '210mm 297mm'} ${pOrient};
+      margin: ${marginMap[pMargin] || '8mm 10mm'};
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: ${fontConf.css};
+      font-size: ${sizeConf.bodyFont};
+      color: #000000;
+      background-color: #ffffff;
+      margin: 0 auto;
+      max-width: ${pOrient === 'landscape' ? '297mm' : '210mm'};
+      padding: 10px;
+      transform: scale(${scaleVal});
+      transform-origin: top center;
+      ${isGray ? 'filter: grayscale(100%);' : ''}
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    th, td {
+      font-size: ${sizeConf.tableFont};
+      line-height: 1.35;
+    }
+    .text-center { text-align: center; }
+    .text-left { text-align: left; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: bold; }
+    .font-black { font-weight: 900; }
+    .uppercase { text-transform: uppercase; }
+    @media print {
+      body {
+        padding: 0;
+        margin: 0;
+        max-width: none;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+  ${shouldAutoPrint ? `
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 400);
+    };
+  </script>
+  ` : ''}
+</body>
+</html>`;
+  };
+
+  // Generator Dokumen HTML untuk Banyak Siswa Sekaligus (Batch Rapor dengan Page Break)
+  const generateMultiReportHTML = (
+    students: SiswaData[],
+    options?: {
+      fontFamily?: string;
+      fontSize?: 'sm' | 'base' | 'lg';
+      themeColor?: string;
+      paperSize?: 'A4' | 'F4' | 'Letter' | 'Legal';
+      paperOrientation?: 'portrait' | 'landscape';
+      paperMargin?: 'normal' | 'narrow' | 'wide';
+      colorMode?: 'color' | 'grayscale';
+      scale?: number;
+      autoPrint?: boolean;
+    }
+  ) => {
+    const chosenFontKey = options?.fontFamily || reportFontFamily;
+    const fontConf = FONT_OPTIONS.find((f) => f.id === chosenFontKey) || FONT_OPTIONS[0];
+    const chosenSizeKey = options?.fontSize || reportFontSize;
+    const sizeConf = FONT_SIZES.find((s) => s.id === chosenSizeKey) || FONT_SIZES[1];
+    const pSize = options?.paperSize || paperSize;
+    const pOrient = options?.paperOrientation || paperOrientation;
+    const pMargin = options?.paperMargin || paperMargin;
+    const isGray = (options?.colorMode || printColorMode) === 'grayscale';
+    const scaleVal = (options?.scale ?? printScale) / 100;
+    const shouldAutoPrint = options?.autoPrint ?? true;
+
+    const marginMap = {
+      normal: '8mm 10mm',
+      narrow: '4mm 6mm',
+      wide: '14mm 16mm'
+    };
+    const sizeMap = {
+      A4: '210mm 297mm',
+      F4: '215mm 330mm',
+      Letter: '216mm 279mm',
+      Legal: '216mm 356mm'
+    };
+
+    const sheetsHtml = students
+      .map((student) => {
+        const bodyContent = generateSingleReportBodyHTML(
+          student,
+          printViewMode === 'detail',
+          showKopSekolah,
+          uploadedKopImage,
+          tableHeaderStyle,
+          studentInfoStyle,
+          options
+        );
+        return `
+          <div class="rapor-page" style="page-break-after: always; break-after: page; padding-bottom: 25px; margin-bottom: 25px; border-bottom: 2px dashed #94a3b8;">
+            ${bodyContent}
+          </div>
+        `;
+      })
+      .join('\n');
+
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Rapor_Kolektif_Kelas_IV_${activeTriwulan}</title>
+  <style>
+    @page {
+      size: ${sizeMap[pSize] || '210mm 297mm'} ${pOrient};
+      margin: ${marginMap[pMargin] || '8mm 10mm'};
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: ${fontConf.css};
+      font-size: ${sizeConf.bodyFont};
+      color: #000000;
+      background-color: #ffffff;
+      margin: 0 auto;
+      max-width: ${pOrient === 'landscape' ? '297mm' : '210mm'};
+      padding: 10px;
+      transform: scale(${scaleVal});
+      transform-origin: top center;
+      ${isGray ? 'filter: grayscale(100%);' : ''}
+    }
+    .rapor-page:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
+      border-bottom: none !important;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    th, td {
+      font-size: ${sizeConf.tableFont};
+      line-height: 1.35;
+    }
+    .text-center { text-align: center; }
+    .text-left { text-align: left; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: bold; }
+    .font-black { font-weight: 900; }
+    .uppercase { text-transform: uppercase; }
+    @media print {
+      body {
+        padding: 0;
+        margin: 0;
+        max-width: none;
+      }
+      .rapor-page {
+        border-bottom: none !important;
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  ${sheetsHtml}
+  ${shouldAutoPrint ? `
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  </script>
+  ` : ''}
+</body>
+</html>`;
+  };
+
+  // Generator File Microsoft Word DOCX (.docx) Resmi Mandiri
+  const generateReportDocxBlob = (
+    students: SiswaData[],
+    options?: {
+      fontFamily?: string;
+      fontSize?: 'sm' | 'base' | 'lg';
+      themeColor?: string;
+      paperSize?: 'A4' | 'F4' | 'Letter' | 'Legal';
+      paperOrientation?: 'portrait' | 'landscape';
+      paperMargin?: 'normal' | 'narrow' | 'wide';
+    }
+  ): Blob => {
+    const chosenFontKey = options?.fontFamily || reportFontFamily;
+    const fontConf = FONT_OPTIONS.find((f) => f.id === chosenFontKey) || FONT_OPTIONS[0];
+
+    const studentSections = students
+      .map((student, idx) => {
+        const body = generateSingleReportBodyHTML(
+          student,
+          printViewMode === 'detail',
+          showKopSekolah,
+          uploadedKopImage,
+          tableHeaderStyle,
+          studentInfoStyle,
+          options
+        );
+        const pageBreak = idx < students.length - 1
+          ? `<br clear=all style='mso-special-character:line-break;page-break-before:always' />`
+          : '';
+        return `
+          <div class="WordSection${idx + 1}" style="page: WordSection;">
+            ${body}
+          </div>
+          ${pageBreak}
+        `;
+      })
+      .join('\n');
+
+    const wordDocHtml = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office'
+            xmlns:w='urn:schemas-microsoft-com:office:word'
+            xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>Rapor Siswa SD Khalimul Khasan</title>
+        <!--[if gte mso 9]>
+        <xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+          </w:WordDocument>
+        </xml>
+        <![endif]-->
+        <style>
+          @page WordSection {
+            size: 595.3pt 841.9pt; /* A4 */
+            margin: 28.3pt 28.3pt 28.3pt 28.3pt;
+            mso-header-margin: 35.4pt;
+            mso-footer-margin: 35.4pt;
+            mso-paper-source: 0;
+          }
+          div.WordSection { page: WordSection; }
+          body {
+            font-family: ${fontConf.css};
+            font-size: 11pt;
+            color: #000000;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10pt;
+          }
+          th, td {
+            border: 1pt solid #000000;
+            padding: 4pt 6pt;
+            font-size: 10pt;
+          }
+        </style>
+      </head>
+      <body>
+        ${studentSections}
+      </body>
+      </html>
+    `;
+
+    return new Blob(['\ufeff' + wordDocHtml], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8'
+    });
+  };
+
+  // Handler Menyimpan File Dokumen dengan Dukungan Pilihan Lokasi Folder (File System Access API)
+  const handleSaveDocumentWithLocation = async (
+    blob: Blob,
+    defaultFilename: string,
+    extension: string,
+    fileTypeDesc: string,
+    mimeType: string,
+    useLocationPicker: boolean
+  ) => {
+    // 1. Coba window.showSaveFilePicker jika diminta dan didukung sistem
+    if (useLocationPicker && 'showSaveFilePicker' in window) {
+      try {
+        const fileHandle = await (window as any).showSaveFilePicker({
+          suggestedName: defaultFilename,
+          types: [
+            {
+              description: fileTypeDesc,
+              accept: {
+                [mimeType]: [`.${extension}`]
+              }
+            }
+          ]
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        setPrintStatus(`Dokumen "${fileHandle.name}" berhasil disimpan di lokasi pilihan Anda!`);
+        setTimeout(() => setPrintStatus(null), 5000);
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          setPrintStatus('Pemilihan folder dibatalkan pengguna.');
+          setTimeout(() => setPrintStatus(null), 3000);
+          return;
+        }
+        console.warn('showSaveFilePicker tidak tersedia atau dibatasi sandbox, beralih ke download langsung:', err);
+      }
+    }
+
+    // 2. Download Browser Standar (Langsung masuk ke unduhan atau dialog browser)
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = defaultFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setPrintStatus(`Dokumen "${defaultFilename}" berhasil diunduh ke komputer Anda!`);
+    setTimeout(() => setPrintStatus(null), 5000);
+  };
+
+  // Eksekutor Iframe Cetak Tersembunyi
+  const executeIframePrint = (htmlContent: string) => {
+    try {
+      let printFrame = document.getElementById('rapor-print-iframe') as HTMLIFrameElement;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'rapor-print-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+      }
+      const frameDoc = printFrame.contentWindow?.document;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(htmlContent);
+        frameDoc.close();
+        setTimeout(() => {
+          try {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+            setPrintStatus('Dialog printer berhasil dibuka!');
+            setTimeout(() => setPrintStatus(null), 4000);
+          } catch (iframeErr) {
+            console.warn('Iframe print blocked:', iframeErr);
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+          }
+        }, 500);
+      }
+    } catch (e) {
+      console.warn('Print iframe error:', e);
+      window.print();
+    }
+  };
+
+  // Eksekutor Cetak dari Modal Pengaturan Printer & Kertas
+  const handleExecutePrint = (asNewTab: boolean = false) => {
+    setPrintStatus('Menyiapkan dokumen cetak sesuai konfigurasi...');
+    setShowPrintModal(false);
+
+    const studentsToPrint = printScope === 'all' ? dataSiswa : [selectedStudent];
+    const printHtml = generateMultiReportHTML(studentsToPrint, {
+      fontFamily: reportFontFamily,
+      fontSize: reportFontSize,
+      themeColor: tableThemeColor,
+      paperSize,
+      paperOrientation,
+      paperMargin,
+      colorMode: printColorMode,
+      scale: printScale,
+      autoPrint: true
+    });
+
+    if (asNewTab) {
+      const blob = new Blob([printHtml], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const newTab = window.open(url, '_blank');
+      if (newTab) {
+        setPrintStatus(`Dokumen (${studentsToPrint.length} siswa) dibuka di tab baru! Dialog printer muncul otomatis.`);
+        setTimeout(() => setPrintStatus(null), 5000);
+      } else {
+        setPrintStatus('Popup diblokir browser, menjalankan cetak sistem langsung.');
+        setTimeout(() => setPrintStatus(null), 4000);
+        executeIframePrint(printHtml);
+      }
+      return;
+    }
+
+    executeIframePrint(printHtml);
+  };
+
+  // Eksekutor Unduh Dokumen dari Modal (Satu / Seluruh Siswa, DOCX / PDF, Pilih Lokasi)
+  const handleExecuteDownload = async (useLocationPicker: boolean = false) => {
+    setIsProcessingExport(true);
+    setPrintStatus('Mempersiapkan dokumen untuk diunduh...');
+
+    try {
+      const studentsToExport = downloadScope === 'all' ? dataSiswa : [selectedStudent];
+      const isAll = downloadScope === 'all';
+      const baseName = isAll
+        ? `Rapor_Seluruh_Siswa_Kelas_IV_${activeTriwulan}`
+        : `Rapor_${selectedStudent.nama.replace(/\s+/g, '_')}_${selectedStudent.nis}_${activeTriwulan}`;
+
+      if (downloadFormat === 'docx') {
+        const docxBlob = generateReportDocxBlob(studentsToExport, {
+          fontFamily: reportFontFamily,
+          fontSize: reportFontSize,
+          themeColor: tableThemeColor,
+          paperSize,
+          paperOrientation,
+          paperMargin
+        });
+        const filename = `${baseName}.docx`;
+        await handleSaveDocumentWithLocation(
+          docxBlob,
+          filename,
+          'docx',
+          'Microsoft Word Document (.docx)',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          useLocationPicker
+        );
+      } else {
+        // PDF Document Format
+        const pdfHtml = generateMultiReportHTML(studentsToExport, {
+          fontFamily: reportFontFamily,
+          fontSize: reportFontSize,
+          themeColor: tableThemeColor,
+          paperSize,
+          paperOrientation,
+          paperMargin,
+          colorMode: 'color',
+          scale: 100,
+          autoPrint: false
+        });
+        const filename = `${baseName}.pdf`;
+        const pdfBlob = new Blob([pdfHtml], { type: 'application/pdf;charset=utf-8' });
+        await handleSaveDocumentWithLocation(
+          pdfBlob,
+          filename,
+          'pdf',
+          'PDF Document (.pdf)',
+          'application/pdf',
+          useLocationPicker
+        );
+      }
+
+      setShowDownloadModal(false);
+    } catch (err) {
+      console.error('Error saat unduh dokumen:', err);
+      setPrintStatus('Terjadi kesalahan saat memproses unduhan dokumen.');
+    } finally {
+      setIsProcessingExport(false);
+    }
+  };
+
+  // Buka Halaman Cetak di Tab Baru (Fallback & Kompatibilitas)
+  const handleOpenPrintTab = () => {
+    handleExecutePrint(true);
+  };
+
+  // Unduh File Rapor Mandiri (Fallback & Kompatibilitas)
+  const handleDownloadRaporHTML = () => {
+    setShowDownloadModal(true);
+  };
+
+  // Handler Utama Tombol Cetak Rapor (Memunculkan Dialog Pengaturan Printer & Kertas)
+  const handlePrintRapor = () => {
+    setShowPrintModal(true);
+  };
+
+  // Generator Dokumen HTML Spider Chart Lengkap Siap Cetak
+  const generateSpiderReportHTML = (student: SiswaData) => {
+    const analysis = getStudentSpiderAnalysis(student);
+    const CX = 270;
+    const CY = 270;
+    const R = 175;
+    const numAspects = ASPEK_LIST.length;
+
+    // Grid polygons
+    const gridPolygons = [1, 2, 3, 4, 5].map((level) => {
+      const radius = (level / 5) * R;
+      const pts = ASPEK_LIST.map((_, i) => {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+        return `${(CX + radius * Math.cos(angle)).toFixed(1)},${(CY + radius * Math.sin(angle)).toFixed(1)}`;
+      }).join(' ');
+      return `<polygon points="${pts}" fill="${level === 5 ? '#f8fafc' : 'none'}" stroke="${level === 5 ? '#94a3b8' : '#cbd5e1'}" stroke-width="${level === 5 ? '1.5' : '1'}" stroke-dasharray="${level === 5 ? 'none' : '3,3'}" />`;
+    }).join('');
+
+    // Axis lines
+    const axisLines = ASPEK_LIST.map((_, i) => {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+      const x = (CX + R * Math.cos(angle)).toFixed(1);
+      const y = (CY + R * Math.sin(angle)).toFixed(1);
+      return `<line x1="${CX}" y1="${CY}" x2="${x}" y2="${y}" stroke="#94a3b8" stroke-width="1.2" />`;
+    }).join('');
+
+    // Data polygon
+    const dataPts = analysis.aspects.map((asp, i) => {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+      const radius = (asp.score / 5) * R;
+      return `${(CX + radius * Math.cos(angle)).toFixed(1)},${(CY + radius * Math.sin(angle)).toFixed(1)}`;
+    }).join(' ');
+
+    // Vertex dots
+    const vertexDots = analysis.aspects.map((asp, i) => {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+      const radius = (asp.score / 5) * R;
+      const x = (CX + radius * Math.cos(angle)).toFixed(1);
+      const y = (CY + radius * Math.sin(angle)).toFixed(1);
+      return `<circle cx="${x}" cy="${y}" r="5.5" fill="#0d9488" stroke="#ffffff" stroke-width="2" />`;
+    }).join('');
+
+    // Labels
+    const labels = analysis.aspects.map((asp, i) => {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+      const x = (CX + (R + 36) * Math.cos(angle)).toFixed(1);
+      const y = (CY + (R + 36) * Math.sin(angle)).toFixed(1);
+      const cosVal = Math.cos(angle);
+      const anchor = cosVal > 0.15 ? 'start' : cosVal < -0.15 ? 'end' : 'middle';
+      return `
+        <text x="${x}" y="${y}" text-anchor="${anchor}" font-size="10.5" font-weight="bold" fill="#0f172a" font-family="sans-serif">
+          ${asp.nama}
+          <tspan font-size="9.5" fill="#0d9488" font-weight="900"> (${asp.score})</tspan>
+        </text>
+      `;
+    }).join('');
+
+    const aspectRows = analysis.aspects.map((asp) => `
+      <tr style="border-bottom: 1px solid #cbd5e1;">
+        <td style="padding: 6px 8px; font-weight: bold; text-align: center; border-right: 1px solid #cbd5e1;">${asp.no}</td>
+        <td style="padding: 6px 8px; font-weight: 800; text-transform: uppercase; font-size: 11px; border-right: 1px solid #cbd5e1;">${asp.nama}</td>
+        <td style="padding: 6px 8px; font-size: 10.5px; color: #475569; border-right: 1px solid #cbd5e1;">${asp.kategori}</td>
+        <td style="padding: 6px 8px; font-weight: 900; text-align: center; font-size: 12px; color: #0d9488; border-right: 1px solid #cbd5e1;">${asp.score} / 5.0</td>
+        <td style="padding: 6px 8px; font-weight: bold; text-align: center; font-size: 11px; border-right: 1px solid #cbd5e1;">${asp.grade}</td>
+        <td style="padding: 6px 8px; font-size: 10px; color: #334155;">${asp.explanation}</td>
+      </tr>
+    `).join('');
+
+    // Hitung Prediksi Potensi Capaian Triwulan Berikutnya
+    const studentTrends = getStudentQuarterTrends(student);
+    const prediction = predictNextQuarterAchievement(student, activeTriwulan, studentTrends.quarters);
+
+    // Proyeksi Polygon Points
+    const predPts = prediction.aspectPredictions.map((asp, i) => {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+      const radius = (asp.predictedScore / 5) * R;
+      return `${(CX + radius * Math.cos(angle)).toFixed(1)},${(CY + radius * Math.sin(angle)).toFixed(1)}`;
+    }).join(' ');
+
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>SpiderChart_${student.nama}_${student.nis}</title>
+  <style>
+    @page { size: A4 portrait; margin: 8mm 10mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; background: #fff; margin: 0 auto; max-width: 210mm; padding: 12px; }
+    .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 12px; background: #fff; }
+    @media print { body { padding: 0; margin: 0; } }
+  </style>
+</head>
+<body>
+  <div style="text-align: center; margin-bottom: 12px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+    <h2 style="margin: 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">LAPORAN ANALISIS GRAFIK RADAR (SPIDER CHART)</h2>
+    <h3 style="margin: 3px 0 0 0; font-size: 12px; font-weight: 800; color: #475569;">Capaian 9 Dimensi Perkembangan Peserta Didik & Proyeksi Triwulan Berikutnya</h3>
+  </div>
+
+  <table style="width: 100%; border: none; font-size: 11px; font-weight: bold; margin-bottom: 12px;">
+    <tr>
+      <td style="width: 110px;">Nama Siswa</td>
+      <td style="text-transform: uppercase; font-weight: 900;">: ${student.nama}</td>
+      <td style="width: 90px;">Kelas</td>
+      <td>: ${student.kelas}</td>
+    </tr>
+    <tr>
+      <td>NIS</td>
+      <td>: ${student.nis}</td>
+      <td>Periode</td>
+      <td>: ${TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan}</td>
+    </tr>
+    <tr>
+      <td>Tahun Ajaran</td>
+      <td>: 2026/2027</td>
+      <td>Tanggal</td>
+      <td>: ${metaRapor.tempatRaport}, ${metaRapor.tanggalRaport}</td>
+    </tr>
+  </table>
+
+  <!-- SPIDER CHART SVG -->
+  <div style="text-align: center; margin: 10px auto;">
+    <svg viewBox="0 0 540 540" style="width: 100%; max-width: 440px; height: auto;">
+      ${gridPolygons}
+      ${axisLines}
+      <!-- Poligon Riil Siswa -->
+      <polygon points="${dataPts}" fill="#0d9488" fill-opacity="0.3" stroke="#0d9488" stroke-width="3" />
+      <!-- Poligon Garis Putus-Putus Proyeksi Triwulan Berikutnya -->
+      <polygon points="${predPts}" fill="#6366f1" fill-opacity="0.12" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="5 3" />
+      ${vertexDots}
+      ${labels}
+    </svg>
+    <div style="font-size: 10px; font-weight: bold; margin-top: 4px; color: #475569;">
+      <span style="color: #0d9488;">■ Capaian Riil (${analysis.averageScore})</span> &nbsp;•&nbsp; 
+      <span style="color: #6366f1;">- - Proyeksi Potensi ${prediction.targetQuarterShort} (${prediction.predictedAverageScore})</span>
+    </div>
+  </div>
+
+  <!-- KPI SUMMARY -->
+  <div style="display: flex; gap: 8px; margin-bottom: 12px; text-align: center;">
+    <div style="flex: 1; border: 1px solid #0d9488; background: #f0fdfa; border-radius: 8px; padding: 8px;">
+      <div style="font-size: 10px; color: #0f766e; font-weight: bold; text-transform: uppercase;">Skor Rerata Kini</div>
+      <div style="font-size: 18px; font-weight: 900; color: #0d9488;">${analysis.averageScore} <span style="font-size: 11px;">/ 5.0</span></div>
+      <div style="font-size: 10px; font-weight: bold; color: #115e59;">Predikat: ${analysis.overallGrade}</div>
+    </div>
+    <div style="flex: 1; border: 1px solid #6366f1; background: #eef2ff; border-radius: 8px; padding: 8px;">
+      <div style="font-size: 10px; color: #4338ca; font-weight: bold; text-transform: uppercase;">Estimasi ${prediction.targetQuarterShort}</div>
+      <div style="font-size: 18px; font-weight: 900; color: #4f46e5;">${prediction.predictedAverageScore} <span style="font-size: 11px;">/ 5.0</span></div>
+      <div style="font-size: 10px; font-weight: bold; color: #3730a3;">Prospek: ${prediction.averageDiff >= 0 ? '+' : ''}${prediction.averageDiff} (${prediction.predictedOverallGrade})</div>
+    </div>
+    <div style="flex: 1; border: 1px solid #16a34a; background: #f0fdf4; border-radius: 8px; padding: 8px;">
+      <div style="font-size: 10px; color: #15803d; font-weight: bold; text-transform: uppercase;">Akselerasi Tertinggi</div>
+      <div style="font-size: 12px; font-weight: 900; color: #166534; margin-top: 4px;">${prediction.topAcceleratingAspects[0]?.nama || '-'} (+${prediction.topAcceleratingAspects[0]?.scoreDiff})</div>
+    </div>
+    <div style="flex: 1; border: 1px solid #ea580c; background: #fff7ed; border-radius: 8px; padding: 8px;">
+      <div style="font-size: 10px; color: #c2410c; font-weight: bold; text-transform: uppercase;">Fokus Pengawalan</div>
+      <div style="font-size: 12px; font-weight: 900; color: #9a3412; margin-top: 4px;">${prediction.priorityInterventionAspects[0]?.nama || '-'}</div>
+    </div>
+  </div>
+
+  <!-- KOTAK ANALISIS PREDIKSI POTENSI -->
+  <div class="card" style="border-left: 4px solid #6366f1; background: #f8fafc;">
+    <strong style="color: #4338ca; font-size: 11px; text-transform: uppercase;">🔮 Analisis Prediksi Potensi Capaian (${prediction.targetQuarterLabel}):</strong>
+    <p style="font-size: 10.5px; line-height: 1.45; margin: 4px 0 0 0; color: #1e293b;">${prediction.summaryDescription}</p>
+  </div>
+
+  <!-- KEKUATAN & KELEMAHAN -->
+  <div class="card" style="border-left: 4px solid #16a34a; background: #fdfdfd;">
+    <strong style="color: #15803d; font-size: 11px; text-transform: uppercase;">🟢 Analisis Kekuatan Siswa:</strong>
+    <p style="font-size: 10.5px; line-height: 1.45; margin: 4px 0 0 0; color: #1e293b;">${analysis.strengthsSummary}</p>
+  </div>
+
+  <div class="card" style="border-left: 4px solid #ea580c; background: #fdfdfd;">
+    <strong style="color: #c2410c; font-size: 11px; text-transform: uppercase;">🔴 Area Pendampingan & Prioritas Peningkatan:</strong>
+    <p style="font-size: 10.5px; line-height: 1.45; margin: 4px 0 0 0; color: #1e293b;">${analysis.weaknessesSummary}</p>
+  </div>
+
+  <!-- TABEL RINCIAN NILAI -->
+  <table style="width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #cbd5e1; margin-top: 8px;">
+    <thead>
+      <tr style="background: #0f172a; color: #ffffff; text-align: center;">
+        <th style="padding: 5px; width: 30px;">NO</th>
+        <th style="padding: 5px; width: 120px;">DIMENSI ASPEK</th>
+        <th style="padding: 5px; width: 140px;">KATEGORI</th>
+        <th style="padding: 5px; width: 80px;">SKOR (1-5)</th>
+        <th style="padding: 5px; width: 80px;">PREDIKAT</th>
+        <th style="padding: 5px; text-align: left;">KETERANGAN CAPAIAN</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${aspectRows}
+    </tbody>
+  </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 400);
+    };
+  </script>
+</body>
+</html>`;
+  };
+
+  const handleOpenSpiderPrintTab = () => {
+    const fullHtml = generateSpiderReportHTML(selectedStudent);
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const newTab = window.open(url, '_blank');
+    if (newTab) {
+      setPrintStatus('Membuka Spider Chart di Tab Baru untuk dicetak/disimpan PDF!');
+      setTimeout(() => setPrintStatus(null), 5000);
+    } else {
+      setShowPrintModal(true);
+    }
+  };
+
+  const handleDownloadSpiderChartHTML = () => {
+    const fullHtml = generateSpiderReportHTML(selectedStudent);
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SpiderChart_Rapor_${selectedStudent.nama.replace(/\s+/g, '_')}_${selectedStudent.nis}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setPrintStatus('File Spider Chart Rapor berhasil diunduh!');
+    setTimeout(() => setPrintStatus(null), 5000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#070D1A] text-slate-900 font-sans flex flex-col items-center justify-start p-1 sm:p-4">
+      {/* Wrapper Luar */}
+      <div className="w-full max-w-[1600px] bg-[#0B1528] rounded-2xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col">
+        {/* ========================================================= */}
+        {/* 1. HEADER UTAMA: MODERN DARK THEME DARI REFERENSI         */}
+        {/* ========================================================= */}
+        <div className="relative bg-[#0B1528] h-18 sm:h-20 flex items-center justify-between px-3 sm:px-6 shadow-md border-b border-slate-800 text-white">
+          <div className="flex items-center gap-2 sm:gap-3 z-10">
+            <button
+              onClick={() => {
+                setCurrentPage('home');
+                setIsMobileSidebarOpen(false);
+              }}
+              className="group relative w-11 sm:w-12 h-10 sm:h-11 rounded-xl bg-gradient-to-tr from-[#1E5BF9] to-blue-700 border border-blue-400/50 shadow-md active:translate-y-0.5 flex items-center justify-center cursor-pointer transition hover:brightness-110"
+              title="Kembali ke Dashboard Utama"
+            >
+              <HomeIcon className="w-5 h-5 text-white" />
+            </button>
+
+            {/* Mobile Sidebar Toggle Button */}
+            <button
+              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              className="md:hidden px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-black text-[11px] flex items-center gap-1.5 shadow"
+            >
+              <Menu className="w-4 h-4 text-amber-300" />
+              <span>MENU</span>
+            </button>
+          </div>
+
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-12 sm:px-32">
+            <h1 className="text-sm sm:text-lg lg:text-2xl font-black tracking-widest text-white uppercase drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] text-center truncate">
+              {currentPage === 'home'
+                ? 'DASHBOARD ANALISIS & RAPOR KURIKULUM MERDEKA'
+                : currentPage === 'teachers' || currentPage === 'guru_manage'
+                ? 'MANAJEMEN AKUN GURU (/teachers)'
+                : currentPage === 'perbandingan'
+                ? 'PERBANDINGAN TRIWULAN'
+                : currentPage === 'to_print_page' && reportViewMode === 'spider_chart'
+                ? 'SPIDER CHART'
+                : currentPage === 'to_print_page'
+                ? 'TO PRINT PAGE'
+                : currentPage === 'dbtw'
+                ? 'REKAP NILAI (DBTW)'
+                : ASPECT_PAGE_KEYS.includes(currentPage)
+                ? `${currentPage.replace('_', ' ').toUpperCase()} • ${activeTriwulan}`
+                : currentPage.replace('_', ' ').toUpperCase()}
+            </h1>
+          </div>
+
+          {/* Quick Context Pill & User Role in Header */}
+          <div className="flex items-center gap-2 z-10">
+            {/* Direct Action Menu: Akun Guru (/teachers) */}
+            <button
+              onClick={() => {
+                setCurrentPage('teachers');
+                setIsMobileSidebarOpen(false);
+              }}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 border transition cursor-pointer shadow-md ${
+                currentPage === 'teachers' || currentPage === 'guru_manage'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-700 text-white border-white ring-2 ring-purple-300'
+                  : 'bg-slate-950/85 hover:bg-purple-950/90 text-purple-200 border-purple-400/60 hover:text-white'
+              }`}
+              title="Buka Manajemen Profil Guru, Kredensial Login & Kelas Binaan (/teachers)"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span className="hidden sm:inline">AKUN GURU (/teachers)</span>
+              <span className="sm:hidden">GURU</span>
+            </button>
+
+            {/* Firebase Connection Status */}
+            <div
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold border backdrop-blur-xs ${
+                firebaseConnected
+                  ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
+                  : 'bg-rose-950/80 border-rose-400 text-rose-200'
+              }`}
+              title={firebaseConnected ? 'Terhubung ke Firebase Realtime Database' : 'Jaringan Firebase Terputus'}
+            >
+              <span className={`w-2 h-2 rounded-full ${firebaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+              <span className="hidden md:inline">{firebaseConnected ? 'RTDB Aktif' : 'Offline'}</span>
+            </div>
+
+            {/* Periode Aktif */}
+            <div className="hidden sm:flex items-center gap-2 bg-slate-950/75 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/30 text-right shadow">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+              <div>
+                <span className="text-[10px] text-slate-300 block leading-tight font-semibold">PERIODE AKTIF:</span>
+                <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                  {TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan}
+                </span>
+              </div>
+            </div>
+
+            {/* User Session Pill & Logout */}
+            {currentUser && (
+              <div className="flex items-center gap-1.5 bg-slate-950/90 text-white px-2.5 sm:px-3 py-1.5 rounded-xl border-2 border-amber-400 shadow-md">
+                <div className="text-right hidden sm:block">
+                  <div className="text-[10px] font-bold text-amber-300 uppercase leading-tight flex items-center justify-end gap-1">
+                    {currentUser.role === 'admin' ? (
+                      <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black">ADMIN</span>
+                    ) : currentUser.role === 'guru' ? (
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9px] font-black">GURU</span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded bg-blue-600 text-white text-[9px] font-black">ORANG TUA</span>
+                    )}
+                    <span>{currentUser.nama}</span>
+                  </div>
+                  <div className="text-[9px] text-slate-300 font-mono">
+                    {currentUser.username}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1 transition shadow cursor-pointer"
+                  title="Keluar dari akun"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline text-[10px]">KELUAR</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* 2. BODY UTAMA: SIDEBAR PERMANEN + AREA KONTEN             */}
+        {/* ========================================================= */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-[820px] bg-[#F4F7FB]">
+          {/* ======================================================= */}
+          {/* PERMANENT LEFT-HAND SIDEBAR (COLLAPSIBLE ACCORDION)       */}
+          {/* ======================================================= */}
+          <aside
+            className={`print:hidden w-full md:w-64 lg:w-72 bg-[#0B1528] text-white border-r border-slate-800 shadow-xl flex flex-col shrink-0 select-none ${
+              isMobileSidebarOpen ? 'block' : 'hidden md:flex'
+            }`}
+          >
+            {/* Header Sidebar (Logo & Brand matching screenshot) */}
+            <div className="p-3.5 border-b border-slate-800 bg-[#0B1528] flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center font-black text-slate-950 shadow-md border border-amber-300/40 text-sm">
+                  <GraduationCap className="w-5 h-5 text-slate-950" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                    E-RAPOR DIGITAL
+                  </h3>
+                  <p className="text-[10px] text-amber-300 font-medium">
+                    Kurikulum Merdeka SD
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMobileSidebarOpen(false)}
+                className="md:hidden p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
+                title="Tutup Menu"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Status Context Triwulan Aktif di Sidebar */}
+            <div className="px-3 py-1.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Konteks Data:
+              </span>
+              <span className="font-black text-amber-400 bg-amber-950/90 px-2 py-0.5 rounded border border-amber-600/70 uppercase tracking-wide">
+                {activeTriwulan} ({TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label})
+              </span>
+            </div>
+
+            {/* List Navigasi Utama */}
+            <div className="p-2.5 space-y-1.5 flex-1 overflow-y-auto max-h-[calc(100vh-210px)] scrollbar-thin">
+              {/* 1. DASHBOARD (HOME) */}
+              <button
+                onClick={() => {
+                  setCurrentPage('home');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'home'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <HomeIcon className="w-4 h-4 shrink-0 text-white" />
+                  <span>DASHBOARD</span>
+                </div>
+                {currentPage === 'home' && (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                )}
+              </button>
+
+              {/* 2. DATABASE SISWA */}
+              <button
+                onClick={() => {
+                  setCurrentPage('database');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'database'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Database className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>DATABASE SISWA</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {masterStudents.length}
+                </span>
+              </button>
+
+              {/* 3. REKAP (DBTW) */}
+              <button
+                onClick={() => {
+                  setCurrentPage('dbtw');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'dbtw'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 shrink-0 text-cyan-400" />
+                  <span>REKAP (DBTW)</span>
+                </div>
+                {currentPage === 'dbtw' ? (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <span className="text-[10px] bg-slate-900/80 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                    MASTER
+                  </span>
+                )}
+              </button>
+
+              {/* Section Header: Periode Penilaian Accordion */}
+              <div className="pt-2 pb-0.5">
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center justify-between border-b border-slate-800">
+                  <span>PERIODE TRIWULAN</span>
+                  <span className="text-[9px] text-amber-400 font-semibold">4 PERIODE</span>
+                </div>
+              </div>
+
+              {/* 4. TRIWULAN 1 s.d 4 (SINGLE-OPEN ACCORDION + 9 ASPEK SUBMENUS) */}
+              {TRIWULAN_OPTIONS.map((t) => {
+                const isExpanded = expandedTriwulan === t.id;
+                const isTriwulanActive = activeTriwulan === t.id;
+
+                return (
+                  <div
+                    key={`sidebar-triwulan-${t.id}`}
+                    className={`rounded-xl border transition overflow-hidden ${
+                      isTriwulanActive
+                        ? 'border-blue-500/60 bg-slate-900/90 shadow-md ring-1 ring-blue-500/30'
+                        : 'border-slate-800/80 bg-slate-900/40 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Header Triwulan Accordion */}
+                    <button
+                      onClick={() => handleToggleTriwulanAccordion(t.id)}
+                      className={`w-full py-2.5 px-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wider transition cursor-pointer group ${
+                        isTriwulanActive
+                          ? isExpanded
+                            ? 'bg-blue-600/30 text-blue-300 font-bold border-b border-blue-500/20'
+                            : 'bg-blue-600/20 text-blue-300 hover:bg-blue-600/30'
+                          : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                      }`}
+                      title={`Klik untuk ${isExpanded ? 'menutup' : 'membuka'} aspek ${t.label}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-blue-400" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-white transition" />
+                          )}
+                        </span>
+                        <span className="tracking-wider">{t.label}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isTriwulanActive && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs uppercase tracking-wider bg-blue-500 text-white">
+                            AKTIF
+                          </span>
+                        )}
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                            isTriwulanActive
+                              ? 'bg-blue-950/80 text-blue-200 border border-blue-800/50'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {t.id}
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Submenu 9 Aspek (Single-Open Accordion Body) */}
+                    {isExpanded && (
+                      <div className="p-1.5 bg-slate-950/80 border-t border-slate-800 space-y-1">
+                        <div className="text-[10px] text-slate-400 font-medium px-2 py-0.5 flex items-center justify-between">
+                          <span>9 Aspek Penilaian:</span>
+                          <span className="text-blue-300 text-[9px] font-bold">Konteks {t.id}</span>
+                        </div>
+
+                        {ASPEK_SIDEBAR_LIST.map((aspek, idx) => {
+                          const isLast = idx === ASPEK_SIDEBAR_LIST.length - 1;
+                          const isSubActive = isTriwulanActive && currentPage === aspek.id;
+
+                          return (
+                            <button
+                              key={`sub-${t.id}-${aspek.id}`}
+                              onClick={() => handleSelectAspectSubmenu(t.id, aspek.id)}
+                              className={`w-full text-left py-1.5 px-2.5 rounded-lg text-xs font-semibold transition flex items-center justify-between group cursor-pointer border ${
+                                isSubActive
+                                  ? 'bg-[#1E5BF9] text-white border-blue-400/50 shadow-sm ring-1 ring-blue-300'
+                                  : 'bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white border-transparent hover:border-slate-700'
+                              }`}
+                              title={`Buka Lembar Penilaian ${aspek.label} (${t.label})`}
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="text-[10px] text-slate-500 font-mono select-none">
+                                  {isLast ? '└──' : '├──'}
+                                </span>
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs border border-white/20"
+                                  style={{ backgroundColor: aspek.color }}
+                                  title={aspek.label}
+                                />
+                                <span className="truncate tracking-wide text-[11px]">
+                                  {aspek.label}
+                                </span>
+                              </div>
+
+                              {isSubActive && (
+                                <span className="text-[9px] font-bold uppercase bg-white text-[#1E5BF9] px-1.5 py-0.5 rounded shadow-xs tracking-wider shrink-0">
+                                  AKTIF
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Section Header: Laporan & Analisis */}
+              <div className="pt-2 pb-0.5">
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-800">
+                  ANALISIS & RAPOR RESMI
+                </div>
+              </div>
+
+              {/* 5. PERBANDINGAN TRIWULAN */}
+              <button
+                onClick={() => {
+                  setCurrentPage('perbandingan');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'perbandingan'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <TrendingUp className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>PERBANDINGAN TW</span>
+                </div>
+                {currentPage === 'perbandingan' ? (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <span className="text-[9px] bg-slate-900 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">
+                    T1-T4
+                  </span>
+                )}
+              </button>
+
+              {/* 6. SPIDER CHART */}
+              <button
+                onClick={() => {
+                  setCurrentPage('to_print_page');
+                  setReportViewMode('spider_chart');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'to_print_page' && reportViewMode === 'spider_chart'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Radar className="w-4 h-4 shrink-0 text-teal-400" />
+                  <span>SPIDER CHART</span>
+                </div>
+                {currentPage === 'to_print_page' && reportViewMode === 'spider_chart' ? (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <span className="text-[9px] bg-slate-900 text-teal-300 border border-teal-800 px-1.5 py-0.5 rounded font-mono font-bold">
+                    RADAR
+                  </span>
+                )}
+              </button>
+
+              {/* 7. TO PRINT PAGE */}
+              <button
+                onClick={() => {
+                  setCurrentPage('to_print_page');
+                  setReportViewMode('document');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'to_print_page' && reportViewMode === 'document'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Printer className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>TO PRINT PAGE</span>
+                </div>
+                {currentPage === 'to_print_page' && reportViewMode === 'document' ? (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <span className="text-[9px] bg-slate-900 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded font-mono font-bold">
+                    CETAK
+                  </span>
+                )}
+              </button>
+
+              {/* 8. MANAJEMEN AKUN GURU (/teachers) */}
+              <button
+                onClick={() => {
+                  setCurrentPage('teachers');
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition cursor-pointer ${
+                  currentPage === 'teachers' || currentPage === 'guru_manage'
+                    ? 'bg-[#1E5BF9] text-white shadow-md ring-2 ring-blue-400/50'
+                    : 'bg-slate-800/70 hover:bg-slate-700/80 text-slate-200'
+                }`}
+                title="Buka Manajemen Profil Guru, Kredensial Login & Kelas Binaan (/teachers)"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 shrink-0 text-amber-300" />
+                  <span>MANAJEMEN GURU</span>
+                </div>
+                {currentPage === 'teachers' || currentPage === 'guru_manage' ? (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <span className="text-[9px] bg-slate-900 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-mono">
+                    {teachersList.length > 0 ? `${teachersList.length} GURU` : 'AKUN'}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Live Academic & Cloud Status (Inspired by Live Gold Rate in screenshot) */}
+            <div className="p-2.5 mx-2 my-2 bg-gradient-to-br from-[#162238] to-[#0c1422] border border-amber-500/30 rounded-2xl shadow-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-amber-300 font-black text-[11px] uppercase tracking-wide">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Status Akademik</span>
+                </div>
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Realtime
+                </span>
+              </div>
+
+              <div className="space-y-1 text-[10px]">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="text-slate-400">Tahun Ajaran:</span>
+                  <span className="text-white font-mono font-bold">2026/2027</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="text-slate-400">Triwulan Aktif:</span>
+                  <span className="text-amber-300 font-bold">{activeTriwulan}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="text-slate-400">Kelas Binaan:</span>
+                  <span className="text-cyan-300 font-bold truncate max-w-[100px]">{currentUser?.kelas || 'Kelas IV (Fase B)'}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="text-slate-400">Database:</span>
+                  <span className={firebaseConnected ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {firebaseConnected ? 'Firebase RTDB' : 'Lokal / Offline'}
+                  </span>
+                </div>
+              </div>
+
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  className="w-full mt-1 py-1.5 px-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 hover:text-white text-[10px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <LogOut className="w-3 h-3 text-rose-400" />
+                  <span>Keluar Akun ({currentUser.nama.split(' ')[0]})</span>
+                </button>
+              )}
+            </div>
+          </aside>
+
+          {/* ========================================================= */}
+          {/* 3. AREA KONTEN MASING-MASING HALAMAN                      */}
+          {/* ========================================================= */}
+          <main className="p-3 sm:p-5 flex-1 min-w-0 overflow-y-auto bg-[#F4F7FB]">
+          {/* ======================================================= */}
+          {/* TAB 0: HOME / DASHBOARD TRIWULAN AKTIF                  */}
+          {/* ======================================================= */}
+          {currentPage === 'home' && (() => {
+            const currentStudentMaster = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0];
+            const currentStudentData = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0];
+            const activeTriwulanLabel = TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan;
+
+            // Logika Periode Pembanding (Triwulan Sebelumnya)
+            const prevQuarterKey: TriwulanKey | null =
+              activeTriwulan === 'T2' ? 'T1' :
+              activeTriwulan === 'T3' ? 'T2' :
+              activeTriwulan === 'T4' ? 'T3' : null;
+            const prevQuarterLabel = prevQuarterKey
+              ? TRIWULAN_OPTIONS.find((t) => t.id === prevQuarterKey)?.label || prevQuarterKey
+              : null;
+
+            // Perbandingan data aktual vs Triwulan sebelumnya
+            const prevComparison = prevQuarterKey
+              ? compareTwoQuarters(currentStudentMaster, prevQuarterKey, activeTriwulan)
+              : null;
+
+            // Kelengkapan Penilaian (Data kosong TIDAK dianggap 0)
+            let totalIndicatorsCount = 0;
+            let filledIndicatorsCount = 0;
+            const unfilledIndicatorsList: { aspectName: string; indName: string; indKey: string; aspectId: string }[] = [];
+
+            // Metrik 9 Aspek
+            const aspectMetricsList = ASPEK_LIST.map((asp) => {
+              const sec = (currentStudentData[asp.id as keyof SiswaData] as Record<string, string>) || {};
+              let aspTotal = 0;
+              let aspFilled = 0;
+              const filledScores: number[] = [];
+
+              asp.indikatorList.forEach((ind) => {
+                totalIndicatorsCount++;
+                aspTotal++;
+                const rating = sec[ind.key];
+                if (rating && typeof rating === 'string' && rating.trim() !== '' && GRADE_WEIGHTS[rating]) {
+                  filledIndicatorsCount++;
+                  aspFilled++;
+                  filledScores.push(GRADE_WEIGHTS[rating]);
+                } else {
+                  unfilledIndicatorsList.push({
+                    aspectName: asp.nama,
+                    indName: ind.nama,
+                    indKey: ind.key,
+                    aspectId: asp.id
+                  });
+                }
+              });
+
+              const hasData = filledScores.length > 0;
+              const avgScore = hasData
+                ? Number((filledScores.reduce((a, b) => a + b, 0) / filledScores.length).toFixed(2))
+                : null;
+              const grade = hasData ? getGradeFromScore(avgScore) : '-';
+              const progressPct = avgScore !== null ? Math.round((avgScore / 5) * 100) : 0;
+
+              // Data komparasi vs triwulan lalu
+              const compItem = prevComparison?.aspects.find((c) => c.id === asp.id);
+
+              return {
+                ...asp,
+                hasData,
+                avgScore,
+                grade,
+                progressPct,
+                aspFilled,
+                aspTotal,
+                compItem
+              };
+            });
+
+            const completionPct = totalIndicatorsCount > 0
+              ? Math.round((filledIndicatorsCount / totalIndicatorsCount) * 100)
+              : 0;
+
+            // Rerata keseluruhan aspek yang sudah terisi
+            const assessedAspects = aspectMetricsList.filter((a) => a.hasData && a.avgScore !== null);
+            const overallAverage = assessedAspects.length > 0
+              ? Number((assessedAspects.reduce((acc, a) => acc + (a.avgScore || 0), 0) / assessedAspects.length).toFixed(2))
+              : null;
+            const overallGrade = overallAverage !== null ? getGradeFromScore(overallAverage) : '-';
+
+            // Sorting untuk analisis prioritas
+            const sortedByScore = [...assessedAspects].sort((a, b) => (a.avgScore || 0) - (b.avgScore || 0));
+            const lowestAspect = sortedByScore[0] || null;
+            const highestAspect = sortedByScore[sortedByScore.length - 1] || null;
+
+            // Data Preview Radar / Spider Chart (9 Dimensi)
+            const CX = 130;
+            const CY = 130;
+            const R = 82;
+            const numAspects = ASPEK_LIST.length;
+
+            const radarGridPolygons = [0.2, 0.4, 0.6, 0.8, 1.0].map((level) => {
+              return ASPEK_LIST.map((_, i) => {
+                const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+                const r = R * level;
+                return `${(CX + r * Math.cos(angle)).toFixed(1)},${(CY + r * Math.sin(angle)).toFixed(1)}`;
+              }).join(' ');
+            });
+
+            const radarDataPoints = aspectMetricsList.map((asp, i) => {
+              const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+              const val = asp.avgScore ?? 1.0;
+              const r = (val / 5) * R;
+              return {
+                x: Number((CX + r * Math.cos(angle)).toFixed(1)),
+                y: Number((CY + r * Math.sin(angle)).toFixed(1)),
+                score: asp.avgScore,
+                nama: asp.nama,
+                kode: (ASPEK_SIDEBAR_LIST.find((s) => s.id === asp.id)?.kode) || asp.nama.slice(0, 2),
+                labelX: Number((CX + (R + 18) * Math.cos(angle)).toFixed(1)),
+                labelY: Number((CY + (R + 18) * Math.sin(angle)).toFixed(1))
+              };
+            });
+
+            const studentTrends = getStudentQuarterTrends(selectedStudent);
+            const prediction = predictNextQuarterAchievement(selectedStudent, activeTriwulan, studentTrends.quarters);
+
+            return (
+              <ModernAdminDashboard
+                prediction={prediction}
+                dataSiswa={dataSiswa}
+                masterStudents={masterStudents}
+                teachersList={teachersList}
+                activeTriwulan={activeTriwulan}
+                setActiveTriwulan={setActiveTriwulan}
+                currentUser={currentUser}
+                selectedStudentNum={selectedStudentNum}
+                setSelectedStudentNum={setSelectedStudentNum}
+                selectedStudent={selectedStudent}
+                overallAverage={overallAverage}
+                overallGrade={overallGrade}
+                completionPct={completionPct}
+                filledIndicatorsCount={filledIndicatorsCount}
+                totalIndicatorsCount={totalIndicatorsCount}
+                unfilledIndicatorsList={unfilledIndicatorsList}
+                highestAspect={highestAspect}
+                lowestAspect={lowestAspect}
+                prevQuarterLabel={prevQuarterLabel}
+                prevQuarterKey={prevQuarterKey}
+                prevComparison={prevComparison}
+                aspectMetricsList={aspectMetricsList}
+                onNavigate={(page, extra) => {
+                  if (page === 'to_print_page' && extra?.mode) {
+                    setReportViewMode(extra.mode);
+                  }
+                  setCurrentPage(page);
+                }}
+                onSelectAspect={(tw, aspId) => handleSelectAspectSubmenu(tw, aspId)}
+                onOpenTeachers={() => setCurrentPage('teachers')}
+                isFirebaseSyncing={isFirebaseSyncing}
+                firebaseConnected={firebaseConnected}
+              />
+            );
+          })()}
+
+          {/* ======================================================= */}
+          {/* TAB 1-9: 9 ASPEK PENILAIAN SISWA (MODERN ASSESSMENT)    */}
+          {/* ======================================================= */}
+          {Boolean(ASPECT_CONFIGS[currentPage as AspectId]) && (
+            <AspectAssessmentSheet
+              aspectId={currentPage as AspectId}
+              selectedTriwulan={activeTriwulan}
+              dataSiswa={filteredSiswa}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              onNavigateHome={() => setCurrentPage('home')}
+              onUpdateField={(studentNo, field, val) =>
+                updateStudentField(studentNo, currentPage as keyof SiswaAssessmentRecord, field, val)
+              }
+              onSave={() => saveStudentsToFirebase(masterStudents, 'Data penilaian berhasil disimpan dan disinkronkan!')}
+              isFirebaseSyncing={isFirebaseSyncing}
+            />
+          )}
+
+          {/* ======================================================= */}
+          {/* TAB 10: DATABASE SISWA + DETAIL RAPORT                   */}
+          {/* ======================================================= */}
+          {currentPage === 'database' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-4 sm:p-7 space-y-6 animate-fadeIn">
+              {/* Header Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setCurrentPage('home')}
+                    className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 border border-slate-300 shadow-xs transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-600" /> HOME
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-[#1E5BF9] border border-blue-200 text-[11px] font-bold">
+                        DIREKTORI PESERTA DIDIK
+                      </span>
+                      <h2 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight">
+                        DATABASE SISWA & PENGATURAN IDENTITAS RAPOR
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Tabel siswa (kiri) & identitas resmi rapor (kanan) terhubung otomatis ke seluruh lembar penilaian dan cetak rapor.
+                    </p>
+                  </div>
+                </div>
+
+                {currentUser?.role !== 'orangtua' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage('teachers')}
+                      className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      title="Buka Manajemen Guru (/teachers)"
+                    >
+                      <Users className="w-3.5 h-3.5 text-purple-600" />
+                      Manajemen Guru (/teachers)
+                    </button>
+                    <button
+                      onClick={() => {
+                        const nextNo = masterStudents.length + 1;
+                        const defaultKelas = currentUser?.kelas || (selectedClassFilter !== 'all' ? `Kelas ${selectedClassFilter}` : 'IV (Empat)');
+                        const newS: StudentRecord = {
+                          no: nextNo,
+                          nama: `NAMA SISWA BARU ${nextNo}`,
+                          nis: `2023400${String(nextNo).padStart(2, '0')}`,
+                          kelas: defaultKelas,
+                          tahunAjaran: '2026/2027',
+                          triwulan: {
+                            T1: createEmptyAssessmentRecord(),
+                            T2: createEmptyAssessmentRecord(),
+                            T3: createEmptyAssessmentRecord(),
+                            T4: createEmptyAssessmentRecord()
+                          }
+                        };
+                        const updated = [...masterStudents, newS];
+                        setMasterStudents(updated);
+                        saveStudentsToFirebase(updated, `Siswa baru "${newS.nama}" (${defaultKelas}) berhasil ditambahkan ke Firebase!`);
+                      }}
+                      className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-[#1E5BF9] border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      + Tambah Siswa
+                    </button>
+                    <button
+                      onClick={() => {
+                        const raw = prompt('Tempel daftar nama siswa dari Excel (Format: NIS [tab] Nama atau cukup Nama per baris):');
+                        if (raw?.trim()) {
+                          const lines = raw.trim().split('\n');
+                          const parsed: StudentRecord[] = lines.map((line, idx) => {
+                            const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+                            const nis = parts[0]?.trim() || `2023400${String(idx + 1).padStart(2, '0')}`;
+                            const nama = parts[1]?.trim() || parts[0]?.trim() || `Siswa ${idx + 1}`;
+                            return {
+                              no: idx + 1,
+                              nama: nama.toUpperCase(),
+                              nis,
+                              kelas: 'IV (Empat)',
+                              tahunAjaran: '2026/2027',
+                              triwulan: {
+                                T1: createEmptyAssessmentRecord(),
+                                T2: createEmptyAssessmentRecord(),
+                                T3: createEmptyAssessmentRecord(),
+                                T4: createEmptyAssessmentRecord()
+                              }
+                            };
+                          });
+                          saveStudentsToFirebase(parsed, `Berhasil mengimpor ${parsed.length} siswa ke Firebase Realtime Database!`);
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      Paste dari Excel
+                    </button>
+
+                    <button
+                      onClick={() => saveStudentsToFirebase(masterStudents, 'Seluruh data siswa berhasil disinkronkan ke Firebase Realtime Database.')}
+                      disabled={isFirebaseSyncing}
+                      className="px-4 py-2 bg-[#1E5BF9] hover:bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-blue-900/20 cursor-pointer transition disabled:opacity-50"
+                      title="Simpan perubahan tabel data siswa ke Firebase Realtime Database"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isFirebaseSyncing ? 'Menyimpan...' : 'Simpan Data Siswa ke RTDB'}</span>
+                    </button>
+                  </div>
+                )}
+                {currentUser?.role === 'orangtua' && (
+                  <div className="px-3.5 py-1.5 bg-amber-50 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                    <span>🔒</span> Mode Tinjau (Read-Only Orang Tua: Data Ananda)
+                  </div>
+                )}
+              </div>
+
+              {/* TAMPILAN SIDE-BY-SIDE: TABEL SISWA DI KIRI & 4 KOTAK DETAIL RAPOR DI KANAN */}
+              <div className="flex flex-col lg:flex-row items-start gap-6">
+                {/* SISI KIRI: TABEL SISWA (NO, NAMA, NIS, KELAS) */}
+                <div className="flex-1 w-full overflow-x-auto border border-slate-200 rounded-2xl shadow-sm bg-white">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-slate-50 font-bold border-b border-slate-200 text-slate-700 text-center uppercase tracking-wider text-[11px]">
+                      <tr>
+                        <th className="p-3 w-12 border-r border-slate-200">NO</th>
+                        <th className="p-3 border-r border-slate-200 text-center min-w-[220px]">NAMA PESERTA DIDIK</th>
+                        <th className="p-3 w-32 border-r border-slate-200 text-center">NIS</th>
+                        <th className="p-3 w-32 border-r border-slate-200 text-center">KELAS</th>
+                        <th className="p-3 w-16 text-center">AKSI</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {dataSiswa.map((s) => (
+                        <tr key={s.no} className="hover:bg-blue-50/30 transition">
+                          {/* NO */}
+                          <td className="p-2.5 text-center font-bold border-r border-slate-100 text-slate-400 font-mono">
+                            {s.no}
+                          </td>
+
+                          {/* NAMA (EDITABLE) */}
+                          <td className="p-1.5 border-r border-slate-100">
+                            <input
+                              type="text"
+                              value={s.nama}
+                              readOnly={currentUser?.role === 'orangtua'}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase();
+                                setMasterStudents((prev: StudentRecord[]) =>
+                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nama: val } : item))
+                                );
+                              }}
+                              className={`w-full font-bold text-xs px-2.5 py-1.5 rounded-lg text-slate-900 transition ${
+                                currentUser?.role === 'orangtua'
+                                  ? 'bg-transparent border-transparent cursor-default'
+                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                              }`}
+                            />
+                          </td>
+
+                          {/* NIS (EDITABLE) */}
+                          <td className="p-1.5 border-r border-slate-100 text-center">
+                            <input
+                              type="text"
+                              value={s.nis}
+                              readOnly={currentUser?.role === 'orangtua'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setMasterStudents((prev: StudentRecord[]) =>
+                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nis: val } : item))
+                                );
+                              }}
+                              className={`w-full font-mono text-center font-semibold text-xs px-2.5 py-1.5 rounded-lg text-slate-800 transition ${
+                                currentUser?.role === 'orangtua'
+                                  ? 'bg-transparent border-transparent cursor-default'
+                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                              }`}
+                            />
+                          </td>
+
+                          {/* KELAS (EDITABLE) */}
+                          <td className="p-1.5 border-r border-slate-100 text-center">
+                            <input
+                              type="text"
+                              value={s.kelas}
+                              readOnly={currentUser?.role === 'orangtua'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setMasterStudents((prev: StudentRecord[]) =>
+                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, kelas: val } : item))
+                                );
+                              }}
+                              className={`w-full text-center text-xs px-2.5 py-1.5 rounded-lg font-semibold text-slate-800 transition ${
+                                currentUser?.role === 'orangtua'
+                                  ? 'bg-transparent border-transparent cursor-default'
+                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                              }`}
+                            />
+                          </td>
+
+                          {/* AKSI HAPUS */}
+                          <td className="p-1.5 text-center">
+                            {currentUser?.role !== 'orangtua' ? (
+                              <button
+                                onClick={() => {
+                                  if (masterStudents.length > 1) {
+                                    const filtered = masterStudents
+                                      .filter((item) => item.no !== s.no)
+                                      .map((item, idx) => ({ ...item, no: idx + 1 }));
+                                    setMasterStudents(filtered);
+                                    saveStudentsToFirebase(filtered, `Siswa "${s.nama}" berhasil dihapus dari Firebase.`);
+                                  }
+                                }}
+                                className="px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition"
+                                title="Hapus Siswa ini"
+                              >
+                                ✕
+                              </button>
+                            ) : (
+                              <span className="text-slate-300 text-xs">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* SISI KANAN: DETAIL HASIL CETAK RAPOR (MODERN CARDS) */}
+                <div className="w-full lg:w-[420px] shrink-0 space-y-4">
+                  {/* KOTAK 1: TANGGAL RAPORT */}
+                  <div className="border border-slate-200 rounded-2xl shadow-2xs overflow-hidden bg-white">
+                    <div className="bg-slate-50 border-b border-slate-200 p-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-[#1E5BF9]" />
+                      <span>TANGGAL RAPORT</span>
+                    </div>
+                    <div className="p-3">
+                      <input
+                        type="text"
+                        value={metaRapor.tanggalRaport}
+                        onChange={(e) => setMetaRapor({ ...metaRapor, tanggalRaport: e.target.value })}
+                        className="w-full text-center font-bold text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-900"
+                        placeholder="Contoh: Malang, 18 Oktober 2026"
+                      />
+                    </div>
+                  </div>
+
+                  {/* KOTAK 2: KEPALA SEKOLAH */}
+                  <div className="border border-slate-200 rounded-2xl shadow-2xs overflow-hidden bg-white">
+                    <div className="bg-slate-50 border-b border-slate-200 p-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <Award className="w-4 h-4 text-amber-500" />
+                      <span>KEPALA SEKOLAH</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      <div className="flex items-center">
+                        <span className="w-24 p-2.5 text-[11px] font-bold uppercase text-slate-500 bg-slate-50/50">
+                          NAMA
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kepalaSekolah.nama}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kepalaSekolah: { ...metaRapor.kepalaSekolah, nama: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-bold text-xs px-3 py-2 text-slate-900 bg-white focus:bg-blue-50/20 focus:outline-none"
+                          placeholder="Nama Kepala Sekolah..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-24 p-2.5 text-[11px] font-bold uppercase text-slate-500 bg-slate-50/50">
+                          NIY / NIP
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kepalaSekolah.niy}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kepalaSekolah: { ...metaRapor.kepalaSekolah, niy: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-mono font-medium text-xs px-3 py-2 text-slate-900 bg-white focus:bg-blue-50/20 focus:outline-none"
+                          placeholder="NIY Kepala Sekolah..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KOTAK 3: NAMA GURU KELAS */}
+                  <div className="border border-slate-200 rounded-2xl shadow-2xs overflow-hidden bg-white">
+                    <div className="bg-slate-50 border-b border-slate-200 p-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-purple-600" />
+                      <span>NAMA GURU KELAS / WALI KELAS</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      <div className="flex items-center">
+                        <span className="w-24 p-2.5 text-[11px] font-bold uppercase text-slate-500 bg-slate-50/50">
+                          NAMA
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.guruKelas.nama}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              guruKelas: { ...metaRapor.guruKelas, nama: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-bold text-xs px-3 py-2 text-slate-900 bg-white focus:bg-blue-50/20 focus:outline-none"
+                          placeholder="Nama Guru Kelas..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-24 p-2.5 text-[11px] font-bold uppercase text-slate-500 bg-slate-50/50">
+                          NIY / NIP
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.guruKelas.niy}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              guruKelas: { ...metaRapor.guruKelas, niy: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-mono font-medium text-xs px-3 py-2 text-slate-900 bg-white focus:bg-blue-50/20 focus:outline-none"
+                          placeholder="NIY Guru Kelas..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KOTAK 4: JUDUL LAPORAN */}
+                  <div className="border border-slate-200 rounded-2xl shadow-2xs overflow-hidden bg-white">
+                    <div className="bg-slate-50 border-b border-slate-200 p-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-600" />
+                      <span>JUDUL LAPORAN RAPOR</span>
+                    </div>
+                    <div className="p-3 space-y-2">
+                      <input
+                        type="text"
+                        value={metaRapor.judulLaporan.baris1}
+                        onChange={(e) =>
+                          setMetaRapor({
+                            ...metaRapor,
+                            judulLaporan: { ...metaRapor.judulLaporan, baris1: e.target.value }
+                          })
+                        }
+                        className="w-full text-center font-bold text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none text-slate-900 uppercase"
+                        placeholder="Baris 1 Judul..."
+                      />
+                      <input
+                        type="text"
+                        value={metaRapor.judulLaporan.baris2}
+                        onChange={(e) =>
+                          setMetaRapor({
+                            ...metaRapor,
+                            judulLaporan: { ...metaRapor.judulLaporan, baris2: e.target.value }
+                          })
+                        }
+                        className="w-full text-center font-black text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none text-slate-900 uppercase"
+                        placeholder="Baris 2 Judul..."
+                      />
+                      <input
+                        type="text"
+                        value={metaRapor.judulLaporan.baris3}
+                        onChange={(e) =>
+                          setMetaRapor({
+                            ...metaRapor,
+                            judulLaporan: { ...metaRapor.judulLaporan, baris3: e.target.value }
+                          })
+                        }
+                        className="w-full text-center font-bold text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none text-slate-900 uppercase"
+                        placeholder="Baris 3 Judul..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* KOTAK 5: KOP & IDENTITAS SEKOLAH LENGKAP */}
+                  <div className="border border-slate-200 rounded-2xl shadow-2xs overflow-hidden bg-white">
+                    <div className="bg-slate-50 border-b border-slate-200 p-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <School className="w-4 h-4 text-blue-600" />
+                      <span>IDENTITAS KOP SEKOLAH RESMI</span>
+                    </div>
+                    <div className="divide-y divide-slate-100 text-xs">
+                      <div className="flex items-center">
+                        <span className="w-28 p-2.5 font-bold uppercase text-slate-500 text-[11px] bg-slate-50/50">
+                          INSTANSI
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.instansi}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, instansi: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-bold px-3 py-2 text-slate-900 bg-white focus:outline-none"
+                          placeholder="Instansi Yayasan / Dinas..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-28 p-2.5 font-bold uppercase text-slate-500 text-[11px] bg-slate-50/50">
+                          SEKOLAH
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.namaSekolah}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, namaSekolah: e.target.value }
+                            })
+                          }
+                          className="flex-1 font-black px-3 py-2 text-slate-900 bg-white focus:outline-none uppercase"
+                          placeholder="Nama Resmi Sekolah..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-28 p-2.5 font-bold uppercase text-slate-500 text-[11px] bg-slate-50/50">
+                          NPSN / AKRED
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.npsn}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, npsn: e.target.value }
+                            })
+                          }
+                          className="flex-1 px-3 py-2 text-slate-900 bg-white focus:outline-none font-mono"
+                          placeholder="NPSN..."
+                        />
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.akreditasi}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, akreditasi: e.target.value }
+                            })
+                          }
+                          className="w-28 border-l border-slate-100 px-3 py-2 text-slate-900 bg-white focus:outline-none"
+                          placeholder="Akreditasi..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-28 p-2.5 font-bold uppercase text-slate-500 text-[11px] bg-slate-50/50">
+                          ALAMAT
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.alamat}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, alamat: e.target.value }
+                            })
+                          }
+                          className="flex-1 px-3 py-2 text-slate-900 bg-white focus:outline-none text-[11px]"
+                          placeholder="Alamat Lengkap Sekolah..."
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="w-28 p-2.5 font-bold uppercase text-slate-500 text-[11px] bg-slate-50/50">
+                          KONTAK/WEB
+                        </span>
+                        <input
+                          type="text"
+                          value={metaRapor.kopSekolah.kontak}
+                          onChange={(e) =>
+                            setMetaRapor({
+                              ...metaRapor,
+                              kopSekolah: { ...metaRapor.kopSekolah, kontak: e.target.value }
+                            })
+                          }
+                          className="flex-1 px-3 py-2 text-slate-900 bg-white focus:outline-none text-[11px]"
+                          placeholder="Telepon, Email, Website..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* FITUR UPLOAD GAMBAR KOP SURAT SEKOLAH */}
+                    <div className="p-3.5 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs uppercase text-slate-900 flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5 text-[#1E5BF9]" /> FILE GAMBAR KOP SEKOLAH
+                        </span>
+                        {uploadedKopImage && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            ✓ Terpasang
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-snug">
+                        Unggah gambar kop resmi sekolah (.png, .jpg) agar hasil cetak otomatis menggunakan kop sekolah Anda.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="file"
+                          ref={dbKopFileInputRef}
+                          onChange={handleKopFileUpload}
+                          accept="image/*"
+                          className="hidden"
+                        />
+                        <button
+                          onClick={() => dbKopFileInputRef.current?.click()}
+                          className="px-3.5 py-1.5 bg-[#1E5BF9] hover:bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> {uploadedKopImage ? 'Ganti File Kop' : 'Upload Kop Saya'}
+                        </button>
+                        {uploadedKopImage && (
+                          <button
+                            onClick={handleRemoveUploadedKop}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                          >
+                            Hapus Kop
+                          </button>
+                        )}
+                      </div>
+                      {uploadedKopImage && (
+                        <div className="mt-2 p-2 bg-white border border-slate-200 rounded-xl text-center">
+                          <p className="text-[10px] text-slate-400 font-semibold mb-1">Pratinjau Kop Terpasang:</p>
+                          <img src={uploadedKopImage} alt="Kop Terpasang" className="max-h-20 mx-auto object-contain" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* TOMBOL SIMPAN PERSONALISASI SEKOLAH KE FIREBASE /app_settings */}
+                  {currentUser?.role === 'admin' && (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 uppercase">
+                          Simpan Pengaturan Aplikasi (Admin)
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Sinkronkan nama sekolah, kop surat, periode, dan tahun ajaran ke Firebase node <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[10px]">/app_settings</code>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleSaveAppSettings}
+                        disabled={isFirebaseSyncing}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-2 cursor-pointer transition disabled:opacity-50 shrink-0"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>{isFirebaseSyncing ? 'Menyimpan...' : 'Simpan Personalisasi ke RTDB'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================= */}
+          {/* TAB 12: DBTW (REKAP MASTER 32 INDIKATOR - MODERN SAAS) */}
+          {/* ======================================================= */}
+          {currentPage === 'dbtw' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-4 sm:p-7 space-y-6 animate-fadeIn">
+              {/* Header Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setCurrentPage('home')}
+                    className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 border border-slate-300 shadow-xs transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-600" /> HOME
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-[11px] font-bold">
+                        Sheet DBTW Master
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
+                        {TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan}
+                      </span>
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight mt-1">
+                      Rekap Master Penilaian Lengkap Siswa
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      32 Indikator lintas 9 aspek perkembangan terintegrasi otomatis dan terkunci per peserta didik.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Cari Siswa / NIS..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9 pr-3.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition w-44 sm:w-56"
+                    />
+                  </div>
+                  <button
+                    onClick={() => saveStudentsToFirebase(masterStudents, 'Seluruh rekap DBTW berhasil disimpan ke Firebase!')}
+                    disabled={isFirebaseSyncing}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{isFirebaseSyncing ? 'Menyimpan...' : 'Simpan'}</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-3.5 py-2 bg-[#0B1528] hover:bg-[#152542] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-blue-400" /> Cetak Rekap
+                  </button>
+                </div>
+              </div>
+
+              {/* TABEL REKAP MASTER PERSIS SHEET DBTW DENGAN FROZEN COLUMNS (CLEAN SAAS STYLING) */}
+              <div className="border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs bg-white">
+                <div className="overflow-x-auto max-h-[72vh]">
+                  <table className="w-full text-xs border-collapse text-center">
+                    <thead className="sticky top-0 z-20 bg-slate-50 border-b border-slate-200 shadow-xs">
+                      {/* BARIS 1: KATEGORI UTAMA */}
+                      <tr className="border-b border-slate-200/80 font-bold uppercase text-[11px]">
+                        <th rowSpan={2} className="border-r border-slate-200 p-2.5 bg-slate-100/90 w-12 sticky left-0 z-30 text-slate-700">NO</th>
+                        <th rowSpan={2} className="border-r border-slate-200 p-2.5 bg-slate-100/90 min-w-[210px] text-left sticky left-12 z-30 text-slate-800">NAMA PESERTA DIDIK</th>
+                        <th rowSpan={2} className="border-r border-slate-200 p-2.5 bg-slate-50 w-24 text-slate-600 font-mono">NIS</th>
+                        <th rowSpan={2} className="border-r border-slate-200 p-2.5 bg-slate-50 w-24 text-slate-600">KELAS</th>
+
+                        {/* 1. KOGNITIF (6) */}
+                        <th colSpan={6} className="border-r border-slate-200 p-1.5 bg-amber-500/10 text-amber-900 font-black tracking-wide">
+                          KOGNITIF
+                        </th>
+                        {/* 2. AFEKTIF (5) */}
+                        <th colSpan={5} className="border-r border-slate-200 p-1.5 bg-blue-500/10 text-blue-900 font-black tracking-wide">
+                          AFEKTIF
+                        </th>
+                        {/* 3. PSIKOMOTOR (4) */}
+                        <th colSpan={4} className="border-r border-slate-200 p-1.5 bg-rose-500/10 text-rose-900 font-black tracking-wide">
+                          PSIKOMOTOR
+                        </th>
+                        {/* 4. SOSIAL (4) */}
+                        <th colSpan={4} className="border-r border-slate-200 p-1.5 bg-indigo-500/10 text-indigo-900 font-black tracking-wide">
+                          SOSIAL
+                        </th>
+                        {/* 5. ISLAMIC LITERACY (3) */}
+                        <th colSpan={3} className="border-r border-slate-200 p-1.5 bg-purple-500/10 text-purple-900 font-black tracking-wide">
+                          ISLAMIC LITERACY
+                        </th>
+                        {/* 6. BILINGUAL (2) */}
+                        <th colSpan={2} className="border-r border-slate-200 p-1.5 bg-teal-500/10 text-teal-900 font-black tracking-wide">
+                          BILINGUAL
+                        </th>
+                        {/* 7. TALENTS (2) */}
+                        <th colSpan={2} className="border-r border-slate-200 p-1.5 bg-orange-500/10 text-orange-900 font-black tracking-wide">
+                          TALENTS
+                        </th>
+                        {/* 8. EXPERIENCE (3) */}
+                        <th colSpan={3} className="border-r border-slate-200 p-1.5 bg-cyan-500/10 text-cyan-900 font-black tracking-wide">
+                          EXPERIENCE
+                        </th>
+                        {/* 9. INKLUSIVITAS (3) */}
+                        <th colSpan={3} className="p-1.5 bg-emerald-500/10 text-emerald-900 font-black tracking-wide">
+                          INKLUSIVITAS
+                        </th>
+                      </tr>
+
+                      {/* BARIS 2: KODE SUB-ASPEK SINGKAT */}
+                      <tr className="text-[10px] font-bold text-slate-700 bg-white">
+                        {/* Kognitif */}
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/40" title="Rentang Perhatian">RP</th>
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/20" title="Pemahaman Instruksi">PI</th>
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/40" title="Rentang Memori">RM</th>
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/20" title="Pemecahan Masalah">PM</th>
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/40" title="Berpikir Kritis">KR</th>
+                        <th className="border-r border-slate-200 p-1 bg-amber-50/20" title="Kreativitas / Inovasi">KI</th>
+
+                        {/* Afektif */}
+                        <th className="border-r border-slate-200 p-1 bg-blue-50/40" title="Empati">EM</th>
+                        <th className="border-r border-slate-200 p-1 bg-blue-50/20" title="Suasana Hati">SH</th>
+                        <th className="border-r border-slate-200 p-1 bg-blue-50/40" title="Motivasi">MO</th>
+                        <th className="border-r border-slate-200 p-1 bg-blue-50/20" title="Kesabaran">KS</th>
+                        <th className="border-r border-slate-200 p-1 bg-blue-50/40" title="Ketangguhan">KT</th>
+
+                        {/* Psikomotor */}
+                        <th className="border-r border-slate-200 p-1 bg-rose-50/20" title="Motorik Kasar">MK</th>
+                        <th className="border-r border-slate-200 p-1 bg-rose-50/40" title="Motorik Halus">MH</th>
+                        <th className="border-r border-slate-200 p-1 bg-rose-50/20" title="Perilaku Repetitif">RE</th>
+                        <th className="border-r border-slate-200 p-1 bg-rose-50/40" title="Keluwesan">KK</th>
+
+                        {/* Sosial */}
+                        <th className="border-r border-slate-200 p-1 bg-indigo-50/40" title="Otoritas">OT</th>
+                        <th className="border-r border-slate-200 p-1 bg-indigo-50/20" title="Kepemimpinan">LD</th>
+                        <th className="border-r border-slate-200 p-1 bg-indigo-50/40" title="Altruisme">AT</th>
+                        <th className="border-r border-slate-200 p-1 bg-indigo-50/20" title="Komunikasi">KO</th>
+
+                        {/* Islamic Literacy */}
+                        <th className="border-r border-slate-200 p-1 bg-purple-50/20" title="Kecintaan Al-Qur'an">AQ</th>
+                        <th className="border-r border-slate-200 p-1 bg-purple-50/40" title="Akhlak Terpuji">AK</th>
+                        <th className="border-r border-slate-200 p-1 bg-purple-50/20" title="Semangat Beribadah">IB</th>
+
+                        {/* Bilingual */}
+                        <th className="border-r border-slate-200 p-1 bg-teal-50/40" title="Kepercayaan Diri">KD</th>
+                        <th className="border-r border-slate-200 p-1 bg-teal-50/20" title="Semangat Belajar">SB</th>
+
+                        {/* Talents */}
+                        <th className="border-r border-slate-200 p-1 bg-orange-50/40" title="Keunikan">UQ</th>
+                        <th className="border-r border-slate-200 p-1 bg-orange-50/20" title="Ketertarikan / Hobi">IN</th>
+
+                        {/* Experience */}
+                        <th className="border-r border-slate-200 p-1 bg-cyan-50/40" title="Eksplorasi">EX</th>
+                        <th className="border-r border-slate-200 p-1 bg-cyan-50/20" title="Observatif">OB</th>
+                        <th className="border-r border-slate-200 p-1 bg-cyan-50/40" title="Refleksi">RE</th>
+
+                        {/* Inklusivitas */}
+                        <th className="border-r border-slate-200 p-1 bg-emerald-50/20" title="Solidaritas">SO</th>
+                        <th className="border-r border-slate-200 p-1 bg-emerald-50/40" title="Keadilan">FA</th>
+                        <th className="p-1 bg-emerald-50/20" title="Penghormatan">PH</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredSiswa.map((siswa, sIdx) => {
+                        const renderCell = (
+                          section: keyof SiswaAssessmentRecord,
+                          subKey: string,
+                          val: string,
+                          defaultBg: string
+                        ) => {
+                          const isExceptional = val === 'Exceptional';
+                          const isA = val === 'A';
+                          const isB = val === 'B';
+                          const isC = val === 'C';
+                          const isDefisit = val === 'Defisit';
+
+                          const badgeStyle = isExceptional
+                            ? 'bg-purple-100 text-purple-800 font-extrabold border border-purple-200'
+                            : isA
+                            ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-200'
+                            : isB
+                            ? 'bg-blue-100 text-blue-800 font-bold border border-blue-200'
+                            : isC
+                            ? 'bg-amber-100 text-amber-800 font-bold border border-amber-200'
+                            : isDefisit
+                            ? 'bg-rose-100 text-rose-800 font-bold border border-rose-200'
+                            : defaultBg;
+
+                          return (
+                            <td
+                              key={subKey}
+                              className={`border-r border-slate-100 p-0.5 text-center transition ${badgeStyle}`}
+                            >
+                              <select
+                                value={val}
+                                onChange={(e) => updateStudentField(siswa.no, section, subKey, e.target.value)}
+                                className="w-full text-center text-[10.5px] font-bold bg-transparent focus:outline-none cursor-pointer py-1"
+                                title={`${siswa.nama} - ${subKey.toUpperCase()}: ${val || 'Belum diisi'}`}
+                              >
+                                <option value="">-</option>
+                                {PILIHAN_PREDIKAT.map((p) => (
+                                  <option key={p} value={p}>
+                                    {p}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          );
+                        };
+
+                        const isEven = sIdx % 2 === 0;
+                        const rowBg = isEven ? 'bg-white' : 'bg-slate-50/40';
+
+                        return (
+                          <tr key={siswa.no} className={`${rowBg} hover:bg-blue-50/40 transition-colors`}>
+                            {/* STICKY NO */}
+                            <td className="border-r border-slate-200 p-1.5 font-bold text-slate-500 bg-slate-50 sticky left-0 z-10 w-12 text-center text-xs">
+                              {siswa.no}
+                            </td>
+
+                            {/* STICKY NAMA */}
+                            <td className="border-r border-slate-200 p-2 text-left font-bold text-slate-900 bg-white sticky left-12 z-10 whitespace-nowrap text-xs shadow-xs">
+                              {siswa.nama}
+                            </td>
+
+                            {/* NIS */}
+                            <td className="border-r border-slate-100 p-1.5 font-mono text-[11px] text-slate-500">
+                              {siswa.nis}
+                            </td>
+
+                            {/* KELAS */}
+                            <td className="border-r border-slate-100 p-1.5 text-[11px] text-slate-600 whitespace-nowrap">
+                              {siswa.kelas}
+                            </td>
+
+                            {/* 1. KOGNITIF (6) */}
+                            {renderCell('kognitif', 'rp', siswa.kognitif.rp, 'hover:bg-amber-50/50')}
+                            {renderCell('kognitif', 'pi', siswa.kognitif.pi, 'hover:bg-amber-50/50')}
+                            {renderCell('kognitif', 'rm', siswa.kognitif.rm, 'hover:bg-amber-50/50')}
+                            {renderCell('kognitif', 'pm', siswa.kognitif.pm, 'hover:bg-amber-50/50')}
+                            {renderCell('kognitif', 'kr', siswa.kognitif.kr, 'hover:bg-amber-50/50')}
+                            {renderCell('kognitif', 'ki', siswa.kognitif.ki, 'hover:bg-amber-50/50')}
+
+                            {/* 2. AFEKTIF (5) */}
+                            {renderCell('afektif', 'em', siswa.afektif.em, 'hover:bg-blue-50/50')}
+                            {renderCell('afektif', 'sh', siswa.afektif.sh, 'hover:bg-blue-50/50')}
+                            {renderCell('afektif', 'mo', siswa.afektif.mo, 'hover:bg-blue-50/50')}
+                            {renderCell('afektif', 'ks', siswa.afektif.ks, 'hover:bg-blue-50/50')}
+                            {renderCell('afektif', 'kt', siswa.afektif.kt, 'hover:bg-blue-50/50')}
+
+                            {/* 3. PSIKOMOTOR (4) */}
+                            {renderCell('psikomotor', 'mk', siswa.psikomotor.mk, 'hover:bg-rose-50/50')}
+                            {renderCell('psikomotor', 'mh', siswa.psikomotor.mh, 'hover:bg-rose-50/50')}
+                            {renderCell('psikomotor', 're', siswa.psikomotor.re, 'hover:bg-rose-50/50')}
+                            {renderCell('psikomotor', 'kk', siswa.psikomotor.kk, 'hover:bg-rose-50/50')}
+
+                            {/* 4. SOSIAL (4) */}
+                            {renderCell('sosial', 'ot', siswa.sosial.ot, 'hover:bg-indigo-50/50')}
+                            {renderCell('sosial', 'ld', siswa.sosial.ld, 'hover:bg-indigo-50/50')}
+                            {renderCell('sosial', 'at', siswa.sosial.at, 'hover:bg-indigo-50/50')}
+                            {renderCell('sosial', 'ko', siswa.sosial.ko, 'hover:bg-indigo-50/50')}
+
+                            {/* 5. ISLAMIC LITERACY (3) */}
+                            {renderCell('islamicLiteracy', 'aq', siswa.islamicLiteracy.aq, 'hover:bg-purple-50/50')}
+                            {renderCell('islamicLiteracy', 'ak', siswa.islamicLiteracy.ak, 'hover:bg-purple-50/50')}
+                            {renderCell('islamicLiteracy', 'ib', siswa.islamicLiteracy.ib, 'hover:bg-purple-50/50')}
+
+                            {/* 6. BILINGUAL (2) */}
+                            {renderCell('bilingual', 'kd', siswa.bilingual.kd, 'hover:bg-teal-50/50')}
+                            {renderCell('bilingual', 'sb', siswa.bilingual.sb, 'hover:bg-teal-50/50')}
+
+                            {/* 7. TALENTS (2) */}
+                            {renderCell('talents', 'uq', siswa.talents.uq, 'hover:bg-orange-50/50')}
+                            {renderCell('talents', 'in', siswa.talents.in, 'hover:bg-orange-50/50')}
+
+                            {/* 8. EXPERIENCE (3) */}
+                            {renderCell('experience', 'ex', siswa.experience.ex, 'hover:bg-cyan-50/50')}
+                            {renderCell('experience', 'ob', siswa.experience.ob, 'hover:bg-cyan-50/50')}
+                            {renderCell('experience', 're', siswa.experience.re, 'hover:bg-cyan-50/50')}
+
+                            {/* 9. INKLUSIVITAS (3) */}
+                            {renderCell('inklusivitas', 'so', siswa.inklusivitas.so, 'hover:bg-emerald-50/50')}
+                            {renderCell('inklusivitas', 'fa', siswa.inklusivitas.fa, 'hover:bg-emerald-50/50')}
+                            {renderCell('inklusivitas', 'ph', siswa.inklusivitas.ph, 'hover:bg-emerald-50/50')}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* LEGENDA WARNA REKAP (MODERN SAAS PILLS) */}
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 flex flex-wrap items-center justify-between gap-4 text-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-bold text-slate-700">Legenda Predikat:</span>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 border border-purple-200 font-extrabold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />
+                    <span>Exceptional</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                    <span>A (Sangat Baik)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 border border-blue-200 font-bold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                    <span>B (Berkembang)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                    <span>C (Cukup)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 font-bold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                    <span>Defisit (Perlu Pendampingan)</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Nilai otomatis tersinkronisasi antar sheet dan laporan rapor.</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================= */}
+          {/* TAB: PERBANDINGAN TRIWULAN (MULTI-PERIOD ANALYSIS)       */}
+          {/* ======================================================= */}
+          {currentPage === 'perbandingan' && (
+            <PerbandinganTriwulan
+              students={masterStudents}
+              selectedStudentNo={selectedStudentNum}
+              onSelectStudent={setSelectedStudentNum}
+              onNavigateHome={() => setCurrentPage('home')}
+            />
+          )}
+
+          {/* ======================================================= */}
+          {/* TAB 11: TO PRINT PAGE (LEMBAR CETAK RAPOR RESMI)        */}
+          {/* ======================================================= */}
+          {currentPage === 'to_print_page' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-4 sm:p-7 space-y-6 animate-fadeIn">
+              {/* ======================================================= */}
+              {/* TOMBOL BERPINDAH TAMPILAN: FORMAT RESMI VS SPIDER CHART (EXECUTIVE NAVY) */}
+              {/* ======================================================= */}
+              <div className="print:hidden bg-[#0B1528] p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center text-xl shadow-xs text-white shrink-0">
+                    {reportViewMode === 'spider_chart' ? '🕸️' : '📄'}
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-blue-300 uppercase tracking-wider flex items-center gap-2">
+                      <span>Pilih Format Tampilan Rapor</span>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold">
+                        {selectedStudent.nama} ({selectedStudent.nis})
+                      </span>
+                    </div>
+                    <div className="text-sm sm:text-base font-extrabold text-white mt-0.5">
+                      {reportViewMode === 'spider_chart'
+                        ? 'Laporan Grafik Spider Chart (Radar Holistik 9 Aspek)'
+                        : 'Lembar Rapor Cetak Resmi (Format Standar Sekolah)'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1.5 rounded-xl border border-slate-700/80 shadow-inner">
+                  <button
+                    onClick={() => setReportViewMode('document')}
+                    className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition cursor-pointer ${
+                      reportViewMode === 'document'
+                        ? 'bg-white text-slate-900 shadow-sm font-extrabold'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span>Lembar Resmi (Tabel)</span>
+                  </button>
+                  <button
+                    onClick={() => setReportViewMode('spider_chart')}
+                    className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition cursor-pointer ${
+                      reportViewMode === 'spider_chart'
+                        ? 'bg-[#1E5BF9] text-white shadow-sm font-extrabold ring-2 ring-blue-400/30'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Radar className="w-4 h-4 text-blue-200" />
+                    <span>Spider Chart (Radar)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* ======================================================= */}
+              {/* BAR KONTROL BERDASARKAN MODE TAMPILAN AKTIF             */}
+              {/* ======================================================= */}
+              {reportViewMode === 'spider_chart' ? (
+                /* BAR KONTROL SPIDER CHART (MODERN SAAS) */
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4 print:hidden bg-slate-50/70 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      onClick={() => setCurrentPage('home')}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-300 shadow-xs transition cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-slate-600" /> HOME
+                    </button>
+
+                    <div className="h-5 w-px bg-slate-200 hidden sm:block mx-1" />
+
+                    <span className="text-xs font-bold text-slate-600 hidden sm:inline">Pilih Siswa:</span>
+
+                    <button
+                      onClick={() => {
+                        if (currentUser?.role === 'orangtua') return;
+                        if (selectedStudentNum > 1) setSelectedStudentNum((prev) => prev - 1);
+                      }}
+                      disabled={selectedStudentNum <= 1 || currentUser?.role === 'orangtua'}
+                      className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl bg-white disabled:opacity-40 hover:bg-slate-50 shadow-xs transition cursor-pointer"
+                      title="Siswa Sebelumnya"
+                    >
+                      ◀
+                    </button>
+
+                    <select
+                      value={selectedStudentNum}
+                      disabled={currentUser?.role === 'orangtua'}
+                      onChange={(e) => setSelectedStudentNum(Number(e.target.value))}
+                      className={`px-3 py-1.5 text-xs font-bold border rounded-xl max-w-[260px] truncate shadow-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition ${
+                        currentUser?.role === 'orangtua'
+                          ? 'border-blue-400 bg-slate-100 opacity-90 cursor-not-allowed'
+                          : 'border-slate-200 bg-white cursor-pointer'
+                      }`}
+                      title={currentUser?.role === 'orangtua' ? 'Akses Orang Tua: Terkunci ke NISN siswa' : 'Pilih Siswa'}
+                    >
+                      {dataSiswa.map((s) => (
+                        <option key={s.no} value={s.no}>
+                          {s.no}. {s.nama} ({s.nis})
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={() => {
+                        if (currentUser?.role === 'orangtua') return;
+                        if (selectedStudentNum < dataSiswa.length) setSelectedStudentNum((prev) => prev + 1);
+                      }}
+                      disabled={selectedStudentNum >= dataSiswa.length || currentUser?.role === 'orangtua'}
+                      className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl bg-white disabled:opacity-40 hover:bg-slate-50 shadow-xs transition cursor-pointer"
+                      title="Siswa Berikutnya"
+                    >
+                      ▶
+                    </button>
+
+                    {currentUser?.role === 'orangtua' && (
+                      <span className="text-[10px] bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg">
+                        🔒 Terkunci
+                      </span>
+                    )}
+
+                    {/* PILIHAN MENU TRIWULAN (TRIWULAN 1 / TRIWULAN 2 / TRIWULAN 3 / TRIWULAN 4) */}
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/80 shadow-xs ml-1 sm:ml-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase px-1.5 hidden md:inline">
+                        Periode:
+                      </span>
+                      {TRIWULAN_OPTIONS.map((t) => {
+                        const isSelected = activeTriwulan === t.id;
+                        return (
+                          <button
+                            key={`spider-triwulan-${t.id}`}
+                            onClick={() => {
+                              setActiveTriwulan(t.id);
+                              setReportTriwulan(t.id);
+                              setPrintStatus(`Spider Chart menampilkan data ${t.label}.`);
+                              setTimeout(() => setPrintStatus(null), 3000);
+                            }}
+                            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#1E5BF9] text-white shadow-xs font-extrabold'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                            title={`Tampilkan data Spider Chart untuk ${t.label}`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => window.print()}
+                      className="px-3.5 py-2 bg-[#0B1528] hover:bg-[#152542] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-blue-400" /> Cetak Spider Chart
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* BAR KONTROL LEMBAR RESMI (DOKUMEN TABEL - MODERN SAAS) */
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4 print:hidden bg-slate-50/70 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      onClick={() => setCurrentPage('home')}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-300 shadow-xs transition cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-slate-600" /> HOME
+                    </button>
+
+                    <div className="h-5 w-px bg-slate-200 hidden sm:block mx-1" />
+
+                    <span className="text-xs font-bold text-slate-600 hidden sm:inline">Pilih Siswa:</span>
+
+                    <button
+                      onClick={() => {
+                        if (currentUser?.role === 'orangtua') return;
+                        if (selectedStudentNum > 1) {
+                          setSelectedStudentNum((prev) => prev - 1);
+                        }
+                      }}
+                      disabled={selectedStudentNum <= 1 || currentUser?.role === 'orangtua'}
+                      className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl bg-white disabled:opacity-40 hover:bg-slate-50 shadow-xs transition cursor-pointer"
+                      title="Siswa Sebelumnya"
+                    >
+                      ◀
+                    </button>
+
+                    <select
+                      value={selectedStudentNum}
+                      disabled={currentUser?.role === 'orangtua'}
+                      onChange={(e) => setSelectedStudentNum(Number(e.target.value))}
+                      className={`px-3 py-1.5 text-xs font-bold border rounded-xl max-w-[260px] truncate shadow-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition ${
+                        currentUser?.role === 'orangtua'
+                          ? 'border-blue-400 bg-slate-100 opacity-90 cursor-not-allowed'
+                          : 'border-slate-200 bg-white cursor-pointer'
+                      }`}
+                      title={currentUser?.role === 'orangtua' ? 'Akses Orang Tua: Terkunci ke NISN siswa' : 'Pilih Siswa'}
+                    >
+                      {dataSiswa.map((s) => (
+                        <option key={s.no} value={s.no}>
+                          {s.no}. {s.nama} ({s.nis})
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={() => {
+                        if (currentUser?.role === 'orangtua') return;
+                        if (selectedStudentNum < dataSiswa.length) {
+                          setSelectedStudentNum((prev) => prev + 1);
+                        }
+                      }}
+                      disabled={selectedStudentNum >= dataSiswa.length || currentUser?.role === 'orangtua'}
+                      className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl bg-white disabled:opacity-40 hover:bg-slate-50 shadow-xs transition cursor-pointer"
+                      title="Siswa Berikutnya"
+                    >
+                      ▶
+                    </button>
+
+                    {currentUser?.role === 'orangtua' && (
+                      <span className="text-[10px] bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg">
+                        🔒 Terkunci
+                      </span>
+                    )}
+
+                    {/* PILIHAN MENU TRIWULAN (TRIWULAN 1 / TRIWULAN 2 / TRIWULAN 3 / TRIWULAN 4) */}
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/80 shadow-xs ml-1 sm:ml-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase px-1.5 hidden md:inline">
+                        Periode:
+                      </span>
+                      {TRIWULAN_OPTIONS.map((t) => {
+                        const isSelected = activeTriwulan === t.id;
+                        return (
+                          <button
+                            key={`rapor-triwulan-${t.id}`}
+                            onClick={() => {
+                              setActiveTriwulan(t.id);
+                              setReportTriwulan(t.id);
+                              setPrintStatus(`Lembar Rapor menampilkan data ${t.label}.`);
+                              setTimeout(() => setPrintStatus(null), 3000);
+                            }}
+                            className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#1E5BF9] text-white shadow-xs font-extrabold'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                            title={`Tampilkan data Rapor untuk ${t.label}`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Tombol Cetak Utama */}
+                    <button
+                      onClick={handlePrintRapor}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                      title="Buka dialog cetak printer / Simpan ke PDF"
+                    >
+                      <Printer className="w-4 h-4" /> Cetak Rapor
+                    </button>
+
+                    {/* Tombol Unduh File HTML Siap Cetak */}
+                    <button
+                      onClick={handleDownloadRaporHTML}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                      title="Unduh file rapor mandiri. Bisa dibuka dan dicetak langsung dari browser manapun"
+                    >
+                      <Download className="w-4 h-4" /> Unduh Dokumen
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* PEMBERITAHUAN STATUS CETAK */}
+              {printStatus && (
+                <div className="bg-emerald-50 border border-emerald-400 text-emerald-900 px-4 py-2 rounded-lg text-xs font-bold flex items-center justify-between print:hidden shadow-sm animate-pulse">
+                  <span>ℹ️ {printStatus}</span>
+                  <button onClick={() => setPrintStatus(null)} className="text-emerald-700 hover:text-black text-sm font-bold">✕</button>
+                </div>
+              )}
+
+              {/* ======================================================== */}
+              {/* 1. DIALOG PENGATURAN CETAK RAPOR & PRINTER (MODAL LENGKAP) */}
+              {/* ======================================================== */}
+              {showPrintModal && (
+                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs print:hidden overflow-y-auto">
+                  <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/90 max-w-xl w-full my-6 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                    {/* Header Modal (Executive Navy) */}
+                    <div className="bg-[#0B1528] text-white px-6 py-4.5 flex items-center justify-between border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-xl">
+                          <Printer className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base sm:text-lg tracking-wide">
+                            Pengaturan Cetak & Printer Rapor
+                          </h3>
+                          <p className="text-slate-400 text-xs">
+                            Atur kertas, orientasi, margin, dan parameter printer dokumen
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowPrintModal(false)}
+                        className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 text-lg font-bold transition cursor-pointer"
+                        title="Tutup dialog"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="p-5 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+                      {/* 1. CAKUPAN SISWA YANG AKAN DICETAK */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                        <label className="font-black text-slate-800 uppercase tracking-wider block flex items-center gap-1.5">
+                          <span>👤</span> Target Siswa yang Dicetak:
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                            printScope === 'single'
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="printScope"
+                              checked={printScope === 'single'}
+                              onChange={() => setPrintScope('single')}
+                              className="mt-0.5 text-emerald-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs">Siswa Aktif Saat Ini</div>
+                              <div className="text-[11px] text-slate-600 truncate max-w-[200px]">
+                                {selectedStudent.nama} ({selectedStudent.nis})
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                            printScope === 'all'
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="printScope"
+                              checked={printScope === 'all'}
+                              onChange={() => setPrintScope('all')}
+                              className="mt-0.5 text-emerald-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs">Seluruh Siswa ({dataSiswa.length} Siswa)</div>
+                              <div className="text-[11px] text-slate-600">
+                                Cetak kolektif dengan pemisah halaman
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* 2. PENGATURAN KERTAS (UKURAN & ORIENTASI) */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                        <label className="font-black text-slate-800 uppercase tracking-wider block flex items-center gap-1.5">
+                          <span>📄</span> Pengaturan Kertas Dokumen:
+                        </label>
+
+                        {/* Pilihan Ukuran Kertas */}
+                        <div>
+                          <div className="text-[11px] font-bold text-slate-600 mb-1.5">Ukuran Kertas:</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {PAPER_SIZES.map((paper) => (
+                              <button
+                                key={paper.id}
+                                type="button"
+                                onClick={() => setPaperSize(paper.id as any)}
+                                className={`p-2 rounded-lg border text-center transition cursor-pointer ${
+                                  paperSize === paper.id
+                                    ? 'border-emerald-600 bg-emerald-600 text-white font-bold shadow-xs'
+                                    : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+                                }`}
+                              >
+                                <div className="text-xs font-black">{paper.id}</div>
+                                <div className="text-[10px] opacity-85 leading-tight">{paper.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Orientasi & Margin */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-600 mb-1">Orientasi:</div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setPaperOrientation('portrait')}
+                                className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold cursor-pointer ${
+                                  paperOrientation === 'portrait'
+                                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                }`}
+                              >
+                                ↕️ Potret (Tegak)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPaperOrientation('landscape')}
+                                className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold cursor-pointer ${
+                                  paperOrientation === 'landscape'
+                                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                }`}
+                              >
+                                ↔️ Lanskap
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-600 mb-1">Margin Halaman:</div>
+                            <div className="grid grid-cols-3 gap-1">
+                              {[
+                                { id: 'narrow', label: 'Sempit (5mm)' },
+                                { id: 'normal', label: 'Standar (10mm)' },
+                                { id: 'wide', label: 'Lebar (15mm)' }
+                              ].map((m) => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => setPaperMargin(m.id as any)}
+                                  className={`py-1.5 px-1 rounded-lg border text-center text-[10.5px] font-bold cursor-pointer ${
+                                    paperMargin === m.id
+                                      ? 'bg-emerald-700 text-white border-emerald-800'
+                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {m.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. PENGATURAN WARNA, KOP & SKALA DOKUMEN */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                        <label className="font-black text-slate-800 uppercase tracking-wider block flex items-center gap-1.5">
+                          <span>⚙️</span> Opsi Tampilan & Parameter Printer:
+                        </label>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          {/* Kop Toggle */}
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <span className="text-[11px] font-bold text-slate-700">Kop Surat Sekolah:</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button
+                                type="button"
+                                onClick={() => setShowKopSekolah(true)}
+                                className={`flex-1 py-1 text-[11px] font-bold rounded border ${
+                                  showKopSekolah ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                Tampilkan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowKopSekolah(false)}
+                                className={`flex-1 py-1 text-[11px] font-bold rounded border ${
+                                  !showKopSekolah ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                Tanpa Kop
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Mode Warna */}
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <span className="text-[11px] font-bold text-slate-700">Mode Warna Tinta:</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button
+                                type="button"
+                                onClick={() => setPrintColorMode('color')}
+                                className={`flex-1 py-1 text-[11px] font-bold rounded border ${
+                                  printColorMode === 'color' ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                Berwarna
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintColorMode('grayscale')}
+                                className={`flex-1 py-1 text-[11px] font-bold rounded border ${
+                                  printColorMode === 'grayscale' ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                Hitam Putih
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Skala Zoom Dokumen */}
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <span className="text-[11px] font-bold text-slate-700">Skala Ukuran Dokumen:</span>
+                            <div className="grid grid-cols-3 gap-1 mt-1">
+                              {[100, 95, 90].map((sc) => (
+                                <button
+                                  key={sc}
+                                  type="button"
+                                  onClick={() => setPrintScale(sc)}
+                                  className={`py-1 text-[11px] font-bold rounded border ${
+                                    printScale === sc ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {sc}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer Tombol Aksi */}
+                    <div className="bg-slate-100 border-t border-slate-200 px-5 py-3.5 flex flex-wrap items-center justify-between gap-2.5">
+                      <button
+                        onClick={() => setShowPrintModal(false)}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleExecutePrint(true)}
+                          className="px-3.5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition cursor-pointer"
+                          title="Buka dokumen di tab baru dengan dialog print otomatis"
+                        >
+                          🌐 Buka di Tab Baru
+                        </button>
+
+                        <button
+                          onClick={() => handleExecutePrint(false)}
+                          className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md hover:shadow-lg transition cursor-pointer"
+                          title="Cetak langsung menggunakan pengaturan yang dipilih"
+                        >
+                          <Printer className="w-4 h-4" /> Cetak Dokumen Sekarang
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ======================================================== */}
+              {/* 2. DIALOG UNDUH DOKUMEN RAPOR (PILIHAN SISWA, DOCX/PDF, LOKASI) */}
+              {/* ======================================================== */}
+              {showDownloadModal && (
+                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs print:hidden overflow-y-auto">
+                  <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/90 max-w-xl w-full my-6 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                    {/* Header Modal (Executive Navy) */}
+                    <div className="bg-[#0B1528] text-white px-6 py-4.5 flex items-center justify-between border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-xl">
+                          <Download className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base sm:text-lg tracking-wide">
+                            Unduh Dokumen Rapor Siswa
+                          </h3>
+                          <p className="text-slate-400 text-xs">
+                            Pilih cakupan murid, format berkas (Word / PDF), dan tentukan lokasi penyimpanan
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowDownloadModal(false)}
+                        className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 text-lg font-bold transition cursor-pointer"
+                        title="Tutup dialog"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="p-5 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+                      {/* LANGKAH 1: OPSI CAKUPAN SISWA */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px] font-bold">1</span>
+                            Pilih Cakupan Rapor Murid:
+                          </label>
+                          <span className="text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full">
+                            {downloadScope === 'single' ? '1 Rapor Siswa' : `Semua (${dataSiswa.length} Siswa)`}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            downloadScope === 'single'
+                              ? 'border-blue-600 bg-blue-50 text-blue-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="downloadScope"
+                              checked={downloadScope === 'single'}
+                              onChange={() => setDownloadScope('single')}
+                              className="mt-0.5 text-blue-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs">1. Unduh Satu Rapor Murid</div>
+                              <div className="text-[11px] text-slate-600 mt-0.5 font-normal">
+                                Rapor aktif: <strong className="text-slate-900 font-bold">{selectedStudent.nama}</strong> ({selectedStudent.nis})
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            downloadScope === 'all'
+                              ? 'border-blue-600 bg-blue-50 text-blue-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="downloadScope"
+                              checked={downloadScope === 'all'}
+                              onChange={() => setDownloadScope('all')}
+                              className="mt-0.5 text-blue-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs">2. Unduh Seluruh Rapor Murid</div>
+                              <div className="text-[11px] text-slate-600 mt-0.5 font-normal">
+                                Berkas kolektif <strong className="text-slate-900 font-bold">{dataSiswa.length} Siswa</strong> sekaligus dengan halaman terpisah rapi
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* LANGKAH 2: OPSI FORMAT BERKAS */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px] font-bold">2</span>
+                            Pilih Format Dokumen:
+                          </label>
+                          <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded-full uppercase">
+                            Format: {downloadFormat}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {/* OPSI DOCX / WORD */}
+                          <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            downloadFormat === 'docx'
+                              ? 'border-blue-600 bg-blue-50 text-blue-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="downloadFormat"
+                              checked={downloadFormat === 'docx'}
+                              onChange={() => setDownloadFormat('docx')}
+                              className="mt-0.5 text-blue-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 bg-blue-700 text-white rounded text-[10px] font-mono">DOCX</span>
+                                <span>Microsoft Word (.docx)</span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-1 font-normal leading-relaxed">
+                                Format dokumen Word yang dapat diedit langsung. Tabel, border, warna dan tanda tangan 100% presisi.
+                              </div>
+                            </div>
+                          </label>
+
+                          {/* OPSI PDF */}
+                          <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            downloadFormat === 'pdf'
+                              ? 'border-blue-600 bg-blue-50 text-blue-950 font-bold shadow-xs'
+                              : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                          }`}>
+                            <input
+                              type="radio"
+                              name="downloadFormat"
+                              checked={downloadFormat === 'pdf'}
+                              onChange={() => setDownloadFormat('pdf')}
+                              className="mt-0.5 text-blue-600"
+                            />
+                            <div>
+                              <div className="font-extrabold text-xs flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 bg-rose-700 text-white rounded text-[10px] font-mono">PDF</span>
+                                <span>Dokumen PDF Resmi (.pdf)</span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-1 font-normal leading-relaxed">
+                                Format dokumen baku siap cetak dan arsip digital resmi sekolah tanpa perubahan tata letak.
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* LANGKAH 3: OPSI MEMILIH LOKASI PENYIMPANAN */}
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                        <label className="font-black text-slate-900 uppercase tracking-wider block flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[11px] font-bold">3</span>
+                          Pilihan Lokasi Penyimpanan Dokumen di Komputer:
+                        </label>
+
+                        <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-2">
+                          <p className="text-slate-700 text-xs leading-relaxed">
+                            💡 Anda dapat memilih folder penyimpanan sendiri di komputer (Desktop, Documents, Flashdisk, dsb.) menggunakan tombol <strong>"Pilih Folder & Simpan"</strong>, atau mengunduh otomatis ke folder Download browser Anda.
+                          </p>
+                          <div className="text-[11px] text-slate-500 font-mono bg-slate-100 p-2 rounded-lg truncate">
+                            Nama Berkas: {downloadScope === 'all'
+                              ? `Rapor_Seluruh_Siswa_Kelas_IV_${activeTriwulan}.${downloadFormat}`
+                              : `Rapor_${selectedStudent.nama.replace(/\s+/g, '_')}_${selectedStudent.nis}_${activeTriwulan}.${downloadFormat}`}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer Tombol Aksi */}
+                    <div className="bg-slate-100 border-t border-slate-200 px-5 py-3.5 flex flex-wrap items-center justify-between gap-2.5">
+                      <button
+                        onClick={() => setShowDownloadModal(false)}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Opsi 1: Unduh Cepat Otomatis */}
+                        <button
+                          disabled={isProcessingExport}
+                          onClick={() => handleExecuteDownload(false)}
+                          className="px-3.5 py-2 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition cursor-pointer"
+                          title="Simpan langsung ke folder Download browser"
+                        >
+                          <Download className="w-4 h-4" /> Unduh Cepat
+                        </button>
+
+                        {/* Opsi 2: Memilih Lokasi Penyimpanan (Save As Folder Picker) */}
+                        <button
+                          disabled={isProcessingExport}
+                          onClick={() => handleExecuteDownload(true)}
+                          className="px-5 py-2 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md hover:shadow-lg transition cursor-pointer"
+                          title="Buka dialog pemilihan folder di sistem operasi komputer Anda"
+                        >
+                          <FolderOpen className="w-4 h-4" /> Pilih Folder & Simpan
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ======================================================== */}
+              {/* PERCABANGAN MODE: SPIDER CHART VS LEMBAR RESMI (TABEL)   */}
+              {/* ======================================================== */}
+              {reportViewMode === 'spider_chart' ? (
+                /* ====================================================== */
+                /* 1. TAMPILAN LAPORAN SPIDER CHART (RADAR INTERAKTIF)    */
+                /* ====================================================== */
+                <div
+                  id="spider-chart-rapor"
+                  className="bg-white mx-auto border border-slate-200/90 p-5 sm:p-8 max-w-[210mm] w-full text-black print:border-none print:p-0 print:m-0 print:max-w-none shadow-sm rounded-2xl print:rounded-none space-y-5"
+                >
+                  {/* JUDUL LAPORAN HASIL (DIMAKSIMALKAN UNTUK LAPORAN HASIL) */}
+                  <div className="text-center space-y-1 pb-2 border-b-2 border-slate-800">
+                    <span className="inline-block px-3 py-0.5 bg-teal-100 text-teal-900 border border-teal-300 rounded-full text-[11px] font-black uppercase tracking-wider">
+                      Grafik Radar Capaian Kompetensi Peserta Didik
+                    </span>
+                    <h3 className="text-lg sm:text-xl font-black uppercase text-slate-900 tracking-wide">
+                      LAPORAN HASIL EVALUASI RAPOR (SPIDER CHART)
+                    </h3>
+                    <p className="text-xs text-slate-600 font-semibold">
+                      Analisis Holistik 9 Dimensi Capaian • <span className="text-teal-800 font-black">{TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan}</span> • Tahun Ajaran 2026/2027
+                    </p>
+                  </div>
+
+                  {/* IDENTITAS SISWA */}
+                  <div className="bg-slate-50 border-2 border-slate-300 rounded-xl p-3.5 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Nama Siswa</span>
+                        <span className="font-black text-slate-900 uppercase text-sm truncate block">{selectedStudent.nama}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Nomor Induk (NIS)</span>
+                        <span className="font-mono font-bold text-slate-800">{selectedStudent.nis}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Kelas / Fase</span>
+                        <span className="font-bold text-slate-800">{selectedStudent.kelas} (Fase B)</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Periode Rapor</span>
+                        <span className="font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 inline-block uppercase text-[11px]">
+                          {TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Titimangsa Rapor</span>
+                        <span className="font-bold text-slate-800">{metaRapor.tempatRaport}, {metaRapor.tanggalRaport}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KPI SUMMARY CARDS */}
+                  {(() => {
+                    const spiderAnalysis = getStudentSpiderAnalysis(selectedStudent);
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                        <div className="bg-teal-50 border-2 border-teal-500 rounded-xl p-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-teal-800 uppercase tracking-wider block">Indeks Capaian Rerata</span>
+                          <div className="text-2xl font-black text-teal-700 my-0.5">
+                            {spiderAnalysis.averageScore} <span className="text-xs text-slate-500">/ 5.0</span>
+                          </div>
+                          <span className="inline-block px-2.5 py-0.5 rounded-full bg-teal-600 text-white text-[11px] font-black uppercase">
+                            Predikat {spiderAnalysis.overallGrade} ({spiderAnalysis.averagePercentage}%)
+                          </span>
+                        </div>
+
+                        <div className="bg-emerald-50 border-2 border-emerald-500 rounded-xl p-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider block">🌟 Kekuatan Utama</span>
+                          <div className="text-sm font-black text-emerald-950 my-1 truncate">
+                            {spiderAnalysis.topStrengths.map(s => s.nama).slice(0, 2).join(' & ')}
+                          </div>
+                          <span className="text-[11px] text-emerald-800 font-semibold block">
+                            Skor tertinggi: {spiderAnalysis.topStrengths[0]?.score || 5.0} / 5.0
+                          </span>
+                        </div>
+
+                        <div className="bg-amber-50 border-2 border-amber-500 rounded-xl p-3 shadow-xs">
+                          <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider block">🎯 Fokus Pendampingan</span>
+                          <div className="text-sm font-black text-amber-950 my-1 truncate">
+                            {spiderAnalysis.topWeaknesses.map(w => w.nama).slice(0, 2).join(' & ')}
+                          </div>
+                          <span className="text-[11px] text-amber-800 font-semibold block">
+                            Perlu stimulasi & latihan berkelanjutan
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* SPIDER CHART & ASPECT INSPECTOR */}
+                  {(() => {
+                    const spiderAnalysis = getStudentSpiderAnalysis(selectedStudent);
+                    const trendData = getStudentQuarterTrends(selectedStudent);
+                    const predictionData = predictNextQuarterAchievement(selectedStudent, activeTriwulan, trendData.quarters);
+                    const activeAspectId = selectedSpiderAspect || spiderAnalysis.aspects[0].id;
+                    const currentAspect = spiderAnalysis.aspects.find(a => a.id === activeAspectId) || spiderAnalysis.aspects[0];
+
+                    const CX = 270;
+                    const CY = 270;
+                    const R = 175;
+                    const numAspects = ASPEK_LIST.length;
+
+                    const aspectPoints = spiderAnalysis.aspects.map((asp, i) => {
+                      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+                      const radius = (asp.score / 5) * R;
+                      const x = CX + radius * Math.cos(angle);
+                      const y = CY + radius * Math.sin(angle);
+                      const outerRadius = R + 42;
+                      const outerX = CX + outerRadius * Math.cos(angle);
+                      const outerY = CY + outerRadius * Math.sin(angle);
+                      const cosVal = Math.cos(angle);
+                      const anchor: 'start' | 'end' | 'middle' = cosVal > 0.15 ? 'start' : cosVal < -0.15 ? 'end' : 'middle';
+                      return {
+                        ...asp,
+                        angle,
+                        radius,
+                        x,
+                        y,
+                        outerX,
+                        outerY,
+                        anchor
+                      };
+                    });
+
+                    const dataPolygonPoints = aspectPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+                    const predictedAspectPoints = predictionData.aspectPredictions.map((asp, i) => {
+                      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+                      const radius = (asp.predictedScore / 5) * R;
+                      const x = CX + radius * Math.cos(angle);
+                      const y = CY + radius * Math.sin(angle);
+                      return {
+                        ...asp,
+                        x,
+                        y
+                      };
+                    });
+                    const predictedPolygonPoints = predictedAspectPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Selector Tabs 9 Aspek */}
+                        <div className="print:hidden">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <Radar className="w-4 h-4 text-teal-600" />
+                              <span>Klik salah satu aspek untuk memeriksa indikator & penjelasannya:</span>
+                            </span>
+                            <span className="text-slate-500 text-[11px]">9 Dimensi Lengkap</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 p-2 bg-slate-100 rounded-xl border border-slate-300">
+                            {spiderAnalysis.aspects.map((asp) => {
+                              const isSelected = asp.id === activeAspectId;
+                              return (
+                                <button
+                                  key={asp.id}
+                                  onClick={() => setSelectedSpiderAspect(asp.id)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                                    isSelected
+                                      ? 'bg-teal-700 text-white border-teal-800 shadow-md ring-2 ring-teal-300 scale-102'
+                                      : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="w-4 h-4 rounded-full bg-black/10 flex items-center justify-center text-[10px]">
+                                    {asp.no}
+                                  </span>
+                                  <span>{asp.nama}</span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                                    asp.score >= 4 ? 'bg-emerald-500 text-white' : asp.score >= 3 ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                                  }`}>
+                                    {asp.score}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Layout Dua Kolom: Radar SVG (Kiri) & Kartu Penjelasan Aspek (Kanan) */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                          {/* Sisi Kiri: Spider Chart SVG */}
+                          <div className="lg:col-span-7 flex flex-col items-center justify-center p-3 bg-slate-50 rounded-2xl border-2 border-slate-200">
+                            <div className="w-full max-w-[500px] aspect-square relative select-none">
+                              <svg viewBox="0 0 540 540" className="w-full h-full drop-shadow-sm">
+                                <defs>
+                                  <radialGradient id="spiderFillGradient" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.65" />
+                                    <stop offset="60%" stopColor="#0d9488" stopOpacity="0.45" />
+                                    <stop offset="100%" stopColor="#115e59" stopOpacity="0.3" />
+                                  </radialGradient>
+                                  <filter id="glowEffect" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="3" result="blur" />
+                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                  </filter>
+                                </defs>
+
+                                {/* Poligon Grid Konsentris (Level 1 - 5) */}
+                                {[1, 2, 3, 4, 5].map((lvl) => {
+                                  const rad = (lvl / 5) * R;
+                                  const pts = Array.from({ length: numAspects }, (_, i) => {
+                                    const a = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
+                                    return `${(CX + rad * Math.cos(a)).toFixed(1)},${(CY + rad * Math.sin(a)).toFixed(1)}`;
+                                  }).join(' ');
+
+                                  return (
+                                    <g key={lvl}>
+                                      <polygon
+                                        points={pts}
+                                        fill={lvl === 5 ? '#ffffff' : lvl % 2 === 0 ? '#f8fafc' : 'none'}
+                                        stroke={lvl === 5 ? '#64748b' : '#cbd5e1'}
+                                        strokeWidth={lvl === 5 ? 1.5 : 1}
+                                        strokeDasharray={lvl === 5 ? 'none' : '3,3'}
+                                      />
+                                      {/* Label Skor Grid */}
+                                      <text
+                                        x={CX}
+                                        y={CY - rad - 2}
+                                        textAnchor="middle"
+                                        fontSize="9"
+                                        fontWeight="bold"
+                                        fill="#64748b"
+                                      >
+                                        {lvl}.0
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+
+                                {/* Garis Jari-Jari (Spokes) */}
+                                {aspectPoints.map((p) => {
+                                  const endX = CX + R * Math.cos(p.angle);
+                                  const endY = CY + R * Math.sin(p.angle);
+                                  const isSelected = p.id === activeAspectId;
+                                  return (
+                                    <line
+                                      key={`spoke-${p.id}`}
+                                      x1={CX}
+                                      y1={CY}
+                                      x2={endX}
+                                      y2={endY}
+                                      stroke={isSelected ? '#0d9488' : '#cbd5e1'}
+                                      strokeWidth={isSelected ? 2 : 1.2}
+                                    />
+                                  );
+                                })}
+
+                                {/* Poligon Data Siswa Riil */}
+                                <polygon
+                                  points={dataPolygonPoints}
+                                  fill="url(#spiderFillGradient)"
+                                  stroke="#0d9488"
+                                  strokeWidth="3.2"
+                                  filter="url(#glowEffect)"
+                                  className="transition-all duration-300"
+                                />
+
+                                {/* Poligon Garis Putus-Putus Proyeksi Potensi (Jika Aktif) */}
+                                {showPredictionInSpider && (
+                                  <g>
+                                    <polygon
+                                      points={predictedPolygonPoints}
+                                      fill="rgba(99, 102, 241, 0.16)"
+                                      stroke="#6366f1"
+                                      strokeWidth="2.6"
+                                      strokeDasharray="6 3"
+                                      className="transition-all duration-300"
+                                    />
+                                    {predictedAspectPoints.map((p) => (
+                                      <circle
+                                        key={`pred-dot-${p.id}`}
+                                        cx={p.x}
+                                        cy={p.y}
+                                        r="4"
+                                        fill="#6366f1"
+                                        stroke="#ffffff"
+                                        strokeWidth="1.5"
+                                      />
+                                    ))}
+                                  </g>
+                                )}
+
+                                {/* Titik Vertex (Simpul Sudut) */}
+                                {aspectPoints.map((p) => {
+                                  const isSelected = p.id === activeAspectId;
+                                  const isHovered = p.id === spiderHoveredAspect;
+                                  const highlighted = isSelected || isHovered;
+
+                                  return (
+                                    <g
+                                      key={`dot-${p.id}`}
+                                      className="cursor-pointer"
+                                      onClick={() => setSelectedSpiderAspect(p.id)}
+                                      onMouseEnter={() => setSpiderHoveredAspect(p.id)}
+                                      onMouseLeave={() => setSpiderHoveredAspect(null)}
+                                    >
+                                      {highlighted && (
+                                        <circle
+                                          cx={p.x}
+                                          cy={p.y}
+                                          r="13"
+                                          fill="#0d9488"
+                                          fillOpacity="0.25"
+                                        />
+                                      )}
+                                      <circle
+                                        cx={p.x}
+                                        cy={p.y}
+                                        r={highlighted ? 8 : 5.5}
+                                        fill={highlighted ? '#0f766e' : '#0d9488'}
+                                        stroke="#ffffff"
+                                        strokeWidth={highlighted ? 2.5 : 2}
+                                        className="transition-all duration-150"
+                                      />
+                                    </g>
+                                  );
+                                })}
+
+                                {/* Label Teks Aspek di Sekeliling Radar */}
+                                {aspectPoints.map((p) => {
+                                  const isSelected = p.id === activeAspectId;
+                                  const isHovered = p.id === spiderHoveredAspect;
+                                  const highlighted = isSelected || isHovered;
+
+                                  return (
+                                    <g
+                                      key={`label-${p.id}`}
+                                      className="cursor-pointer"
+                                      onClick={() => setSelectedSpiderAspect(p.id)}
+                                      onMouseEnter={() => setSpiderHoveredAspect(p.id)}
+                                      onMouseLeave={() => setSpiderHoveredAspect(null)}
+                                    >
+                                      <text
+                                        x={p.outerX}
+                                        y={p.outerY}
+                                        textAnchor={p.anchor}
+                                        fontSize={highlighted ? 11.5 : 10.5}
+                                        fontWeight={highlighted ? 900 : 800}
+                                        fill={highlighted ? '#0f766e' : '#1e293b'}
+                                        fontFamily="sans-serif"
+                                      >
+                                        {p.no}. {p.nama}
+                                        <tspan
+                                          fontSize={highlighted ? 10.5 : 9.5}
+                                          fontWeight="900"
+                                          fill={p.score >= 4 ? '#16a34a' : p.score >= 3 ? '#2563eb' : '#d97706'}
+                                        >
+                                          {' '}({p.score})
+                                        </tspan>
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+                              </svg>
+                            </div>
+
+                            {/* Tombol Toggle & Legenda Garis Proyeksi */}
+                            <div className="flex flex-wrap items-center justify-center gap-2 mt-2.5 print:hidden">
+                              <button
+                                type="button"
+                                onClick={() => setShowPredictionInSpider(!showPredictionInSpider)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
+                                  showPredictionInSpider
+                                    ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-200'
+                                    : 'bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-50'
+                                }`}
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>
+                                  {showPredictionInSpider
+                                    ? 'Sembunyikan Garis Proyeksi'
+                                    : `Tampilkan Garis Proyeksi (${predictionData.targetQuarterShort})`}
+                                </span>
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] font-bold mt-2">
+                              <div className="flex items-center gap-1.5 text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                                <span className="w-2.5 h-2.5 rounded-full bg-teal-600"></span>
+                                <span>Capaian Riil ({spiderAnalysis.averageScore} / 5.0)</span>
+                              </div>
+                              {showPredictionInSpider && (
+                                <div className="flex items-center gap-1.5 text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
+                                  <span className="w-4 h-0.5 border-t-2 border-dashed border-indigo-600 inline-block"></span>
+                                  <span>Proyeksi Potensi {predictionData.targetQuarterShort} ({predictionData.predictedAverageScore} / 5.0)</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <span className="text-[11px] text-slate-500 mt-1 font-medium print:hidden text-center">
+                              💡 Tip: Klik titik sudut atau label teks untuk melihat penjelasan rincian aspek
+                            </span>
+                          </div>
+
+                          {/* Sisi Kanan: Kartu Rincian & Penjelasan Aspek Terpilih */}
+                          <div className="lg:col-span-5 bg-slate-50 border-2 border-teal-600 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm flex flex-col justify-between">
+                            {/* Header Aspek Terpilih */}
+                            <div className="border-b border-slate-300 pb-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-extrabold text-teal-800 uppercase tracking-wider bg-teal-100 px-2 py-0.5 rounded border border-teal-300">
+                                  Dimensi {currentAspect.no} • Kategori {currentAspect.kategori}
+                                </span>
+                                <span className={`px-2.5 py-1 rounded text-xs font-black uppercase text-white shadow-2xs ${
+                                  currentAspect.grade === 'Exceptional' ? 'bg-purple-600' :
+                                  currentAspect.grade === 'A' ? 'bg-emerald-600' :
+                                  currentAspect.grade === 'B' ? 'bg-blue-600' :
+                                  currentAspect.grade === 'C' ? 'bg-amber-600' : 'bg-rose-600'
+                                }`}>
+                                  Predikat {currentAspect.grade}
+                                </span>
+                              </div>
+                              <h4 className="text-base sm:text-lg font-black text-slate-900 uppercase mt-1">
+                                {currentAspect.nama}
+                              </h4>
+                              <div className="flex items-center justify-between text-xs mt-2">
+                                <span className="text-slate-600 font-semibold">Skor Capaian Dimensi:</span>
+                                <span className="text-lg font-black text-teal-700">
+                                  {currentAspect.score} <span className="text-xs text-slate-500 font-semibold">/ 5.0 ({currentAspect.percentage}%)</span>
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1">
+                                <div
+                                  className="h-full bg-teal-600 rounded-full transition-all duration-300"
+                                  style={{ width: `${currentAspect.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Penjelasan Perolehan Nilai */}
+                            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                              <div className="flex items-center gap-1.5 text-xs font-black text-slate-800 uppercase mb-1">
+                                <Info className="w-4 h-4 text-teal-600" />
+                                <span>Penjelasan Perolehan Nilai:</span>
+                              </div>
+                              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                                {currentAspect.explanation}
+                              </p>
+                            </div>
+
+                            {/* Daftar Indikator Penilaian */}
+                            <div>
+                              <div className="text-xs font-black text-slate-800 uppercase mb-2 flex items-center justify-between">
+                                <span>Rincian Indikator Penilaian ({currentAspect.indicators.length}):</span>
+                                <span className="text-[10px] text-slate-500">Nilai & Deskripsi</span>
+                              </div>
+                              <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                                {currentAspect.indicators.map((ind) => (
+                                  <div
+                                    key={ind.key}
+                                    className="bg-white p-2 rounded-lg border border-slate-200 flex items-start justify-between gap-2 text-xs"
+                                  >
+                                    <div className="space-y-0.5 flex-1">
+                                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                        <span className="w-5 h-5 rounded bg-slate-100 text-slate-700 flex items-center justify-center text-[10px] font-black border border-slate-300">
+                                          {ind.kode}
+                                        </span>
+                                        <span>{ind.nama}</span>
+                                      </div>
+                                      <p className="text-[10.5px] text-slate-600 pl-6.5">{ind.deskripsi}</p>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${
+                                      ind.rating === 'Exceptional' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                                      ind.rating === 'A' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                      ind.rating === 'B' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                      ind.rating === 'C' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                      'bg-rose-100 text-rose-800 border border-rose-300'
+                                    }`}>
+                                      {ind.rating} ({ind.score}.0)
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ANALISIS KEKUATAN & KELEMAHAN SISWA */}
+                  {(() => {
+                    const spiderAnalysis = getStudentSpiderAnalysis(selectedStudent);
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* KOTAK KEKUATAN */}
+                        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-4 sm:p-5 space-y-3 shadow-xs">
+                          <div className="flex items-center gap-2 text-emerald-900 border-b border-emerald-200 pb-2">
+                            <Award className="w-5 h-5 text-emerald-700" />
+                            <h4 className="font-black text-sm uppercase tracking-wide">
+                              🌟 Analisis Kekuatan Siswa (Top Strengths)
+                            </h4>
+                          </div>
+                          <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                            {spiderAnalysis.strengthsSummary}
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[11px] font-black uppercase text-emerald-900 block">
+                              Dimensi Unggulan Yang Dikuasai:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {spiderAnalysis.topStrengths.map((s) => (
+                                <span
+                                  key={s.id}
+                                  onClick={() => setSelectedSpiderAspect(s.id)}
+                                  className="px-2.5 py-1 rounded-md bg-white border border-emerald-300 text-emerald-900 text-xs font-bold shadow-2xs cursor-pointer hover:bg-emerald-100 transition"
+                                >
+                                  ✓ {s.nama} ({s.score} / 5.0) - Predikat {s.grade}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="bg-white/90 p-2.5 rounded-lg border border-emerald-200 text-[11px] text-emerald-950 leading-normal">
+                            <strong>💡 Saran Penguatan:</strong> Berikan peran kepemimpinan dalam kelompok, proyek mandiri berbasis minat, serta kesempatan berbagi inspirasi untuk rekan sebaya.
+                          </div>
+                        </div>
+
+                        {/* KOTAK KELEMAHAN & AREA PENDAMPINGAN */}
+                        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 sm:p-5 space-y-3 shadow-xs">
+                          <div className="flex items-center gap-2 text-amber-950 border-b border-amber-200 pb-2">
+                            <AlertTriangle className="w-5 h-5 text-amber-700" />
+                            <h4 className="font-black text-sm uppercase tracking-wide">
+                              🎯 Area Pendampingan & Fokus Peningkatan
+                            </h4>
+                          </div>
+                          <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                            {spiderAnalysis.weaknessesSummary}
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[11px] font-black uppercase text-amber-950 block">
+                              Dimensi Prioritas Bimbingan:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {spiderAnalysis.topWeaknesses.map((w) => (
+                                <span
+                                  key={w.id}
+                                  onClick={() => setSelectedSpiderAspect(w.id)}
+                                  className="px-2.5 py-1 rounded-md bg-white border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs cursor-pointer hover:bg-amber-100 transition"
+                                >
+                                  ⚠️ {w.nama} ({w.score} / 5.0) - Predikat {w.grade}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 text-[11px] text-amber-950 leading-normal">
+                            <strong>🤝 Catatan Kolaborasi:</strong> Lakukan pembiasaan konsisten berdurasi pendek namun rutin di rumah, dampingi dengan pendekatan positif tanpa membebani mental siswa.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ======================================================== */}
+                  {/* 🔮 ANALISIS PREDIKSI POTENSI CAPAIAN TRIWULAN BERIKUTNYA */}
+                  {/* BERDASARKAN TREN HISTORIS SPIDER CHART                   */}
+                  {/* ======================================================== */}
+                  {(() => {
+                    const trendData = getStudentQuarterTrends(selectedStudent);
+                    const predictionData = predictNextQuarterAchievement(selectedStudent, activeTriwulan, trendData.quarters);
+
+                    return (
+                      <div className="bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/60 border-2 border-indigo-300 rounded-2xl p-4 sm:p-6 space-y-5 shadow-sm print:break-inside-avoid">
+                        {/* Header Prediksi */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-xs">
+                                <Sparkles className="w-4 h-4" />
+                              </span>
+                              <h4 className="font-black text-sm sm:text-base text-slate-900 uppercase tracking-wide">
+                                🔮 Analisis Prediksi Potensi Capaian Triwulan Berikutnya
+                              </h4>
+                            </div>
+                            <p className="text-xs text-slate-600 font-medium">
+                              Model proyeksi berbasis akselerasi & tren kenaikan nilai historis 9 dimensi pada Spider Chart
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-300">
+                              Target: {predictionData.targetQuarterLabel}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-black border border-emerald-300">
+                              Akurasi Model: {predictionData.confidenceLevel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 4 Kartu Metrik Prediksi */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">Capaian Terkini ({predictionData.currentQuarterLabel.split(' ')[0]})</span>
+                            <div className="text-xl font-black text-slate-700 mt-0.5">
+                              {predictionData.currentAverageScore} <span className="text-[10px] font-normal text-slate-500">/ 5.0</span>
+                            </div>
+                            <span className="text-[10px] text-slate-600 font-semibold block">
+                              Predikat: <strong className="text-slate-800">{predictionData.currentOverallGrade}</strong>
+                            </span>
+                          </div>
+
+                          <div className="bg-white p-3 rounded-xl border-2 border-indigo-400 shadow-2xs">
+                            <span className="text-[10px] font-bold text-indigo-700 uppercase block">Estimasi Skor Berikutnya</span>
+                            <div className="text-xl font-black text-indigo-700 mt-0.5">
+                              {predictionData.predictedAverageScore} <span className="text-[10px] font-normal text-slate-500">/ 5.0</span>
+                            </div>
+                            <span className="text-[10px] text-indigo-900 font-bold block">
+                              Prospek Predikat: <strong className="text-indigo-800">{predictionData.predictedOverallGrade}</strong>
+                            </span>
+                          </div>
+
+                          <div className={`p-3 rounded-xl border shadow-2xs ${
+                            predictionData.averageDiff >= 0
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                              : 'bg-rose-50 border-rose-300 text-rose-950'
+                          }`}>
+                            <span className="text-[10px] font-bold uppercase block">Potensi Pertumbuhan</span>
+                            <div className={`text-xl font-black mt-0.5 flex items-center gap-1 ${
+                              predictionData.averageDiff >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                            }`}>
+                              <span>{predictionData.averageDiff >= 0 ? `+${predictionData.averageDiff}` : predictionData.averageDiff}</span>
+                              <span className="text-xs font-bold">({predictionData.averagePercentChange >= 0 ? `+${predictionData.averagePercentChange}` : predictionData.averagePercentChange}%)</span>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider block">
+                              {predictionData.readinessStatus}
+                            </span>
+                          </div>
+
+                          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">Peluang Lonjakan Terbesar</span>
+                            <div className="text-xs font-black text-indigo-900 truncate mt-1">
+                              {predictionData.topAcceleratingAspects[0]?.nama || '-'}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 font-black block">
+                              +{predictionData.topAcceleratingAspects[0]?.scoreDiff} poin (+{predictionData.topAcceleratingAspects[0]?.percentChange}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Kotak Narasi Ringkasan Prediksi */}
+                        <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs flex items-start gap-3 text-xs">
+                          <span className="text-2xl mt-0.5">💡</span>
+                          <div className="space-y-1 text-slate-700">
+                            <strong className="text-indigo-950 font-black uppercase text-xs block">
+                              Ikhtisar Prospek Perkembangan Siswa:
+                            </strong>
+                            <p className="leading-relaxed">
+                              {predictionData.summaryDescription}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Dua Kolom: 3 Aspek Akselerasi & 2 Aspek Prioritas Intervensi */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Kolom Akselerasi Unggulan */}
+                          <div className="bg-white p-4 rounded-xl border border-emerald-300 shadow-2xs space-y-3">
+                            <div className="flex items-center gap-2 border-b border-emerald-100 pb-2 text-emerald-900">
+                              <TrendingUp className="w-4 h-4 text-emerald-600" />
+                              <h5 className="font-black text-xs uppercase tracking-wider">
+                                🚀 3 Dimensi dengan Potensi Lonjakan Tertinggi
+                              </h5>
+                            </div>
+                            <div className="space-y-2">
+                              {predictionData.topAcceleratingAspects.map((asp) => (
+                                <div key={asp.id} className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs space-y-1">
+                                  <div className="flex items-center justify-between font-bold">
+                                    <span className="text-slate-900">{asp.no}. {asp.nama}</span>
+                                    <span className="text-emerald-700 font-black bg-emerald-100 px-2 py-0.5 rounded text-[11px]">
+                                      {asp.currentScore} ➔ {asp.predictedScore} (+{asp.scoreDiff})
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 leading-normal">
+                                    {asp.insight}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Kolom Fokus Pendampingan */}
+                          <div className="bg-white p-4 rounded-xl border border-amber-300 shadow-2xs space-y-3">
+                            <div className="flex items-center gap-2 border-b border-amber-100 pb-2 text-amber-950">
+                              <Shield className="w-4 h-4 text-amber-600" />
+                              <h5 className="font-black text-xs uppercase tracking-wider">
+                                🎯 Area Prioritas Intervensi & Pengawalan
+                              </h5>
+                            </div>
+                            <div className="space-y-2">
+                              {predictionData.priorityInterventionAspects.map((asp) => (
+                                <div key={asp.id} className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-200 text-xs space-y-1">
+                                  <div className="flex items-center justify-between font-bold">
+                                    <span className="text-slate-900">{asp.no}. {asp.nama}</span>
+                                    <span className="text-amber-800 font-black bg-amber-100 px-2 py-0.5 rounded text-[11px]">
+                                      Estimasi {asp.predictedScore} ({asp.predictedGrade})
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 leading-normal">
+                                    {asp.insight}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Tabel Komparasi Prediksi 9 Dimensi */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                            <span className="uppercase font-black text-xs text-indigo-950">
+                              📊 Matriks Estimasi Capaian 9 Dimensi (Saat Ini vs Target Prediksi):
+                            </span>
+                            <span className="text-[11px] text-slate-500">Skala Penilaian 1.0 - 5.0</span>
+                          </div>
+                          <div className="overflow-x-auto border border-indigo-200 rounded-xl bg-white shadow-2xs">
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-indigo-950 text-white text-center font-bold">
+                                  <th className="p-2 border-r border-indigo-800 w-10">NO</th>
+                                  <th className="p-2 border-r border-indigo-800 text-left min-w-[130px]">DIMENSI ASPEK</th>
+                                  <th className="p-2 border-r border-indigo-800 w-24">SKOR KINI</th>
+                                  <th className="p-2 border-r border-indigo-800 w-28 bg-indigo-900">PROYEKSI NILAI</th>
+                                  <th className="p-2 border-r border-indigo-800 w-24">ESTIMASI DELTA</th>
+                                  <th className="p-2 border-r border-indigo-800 w-28">STATUS PROSPEK</th>
+                                  <th className="p-2 text-left min-w-[240px]">ARAH PENDAMPINGAN</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {predictionData.aspectPredictions.map((asp) => (
+                                  <tr key={asp.id} className="hover:bg-indigo-50/40 transition">
+                                    <td className="p-2 text-center font-bold text-slate-600 border-r border-slate-200">{asp.no}</td>
+                                    <td className="p-2 font-black text-slate-900 uppercase border-r border-slate-200">{asp.nama}</td>
+                                    <td className="p-2 text-center font-bold text-slate-700 border-r border-slate-200">
+                                      {asp.currentScore} ({asp.currentGrade})
+                                    </td>
+                                    <td className="p-2 text-center font-black text-indigo-700 bg-indigo-50/60 border-r border-slate-200">
+                                      {asp.predictedScore} <span className="text-[10px] text-slate-500">({asp.predictedGrade})</span>
+                                    </td>
+                                    <td className={`p-2 text-center font-black border-r border-slate-200 ${
+                                      asp.scoreDiff > 0 ? 'text-emerald-700' : asp.scoreDiff < 0 ? 'text-rose-700' : 'text-slate-600'
+                                    }`}>
+                                      {asp.scoreDiff > 0 ? `+${asp.scoreDiff}` : asp.scoreDiff}
+                                    </td>
+                                    <td className="p-2 text-center border-r border-slate-200">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                        asp.status === 'MELOJIT'
+                                          ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                          : asp.status === 'MENINGKAT'
+                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                          : asp.status === 'STABIL'
+                                          ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                      }`}>
+                                        {asp.status === 'MELOJIT' ? '🚀 Melonjak' : asp.status === 'MENINGKAT' ? '📈 Meningkat' : asp.status === 'STABIL' ? '⚖️ Stabil' : '⚠️ Bimbingan'}
+                                      </span>
+                                    </td>
+                                    <td className="p-2 text-slate-700 text-[11px] leading-relaxed">
+                                      {asp.insight}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Rencana Aksi Kolaboratif Guru & Orang Tua */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                            <strong className="text-slate-900 font-black uppercase text-[11px] flex items-center gap-1.5">
+                              🎓 Rekomendasi Tindak Lanjut Guru (Sekolah):
+                            </strong>
+                            <ul className="space-y-1 text-slate-700 text-[11px] list-disc list-inside leading-relaxed">
+                              {predictionData.actionPlanTeacher.map((act, i) => (
+                                <li key={i}>{act}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                            <strong className="text-slate-900 font-black uppercase text-[11px] flex items-center gap-1.5">
+                              🏡 Rekomendasi Pendampingan Orang Tua (Rumah):
+                            </strong>
+                            <ul className="space-y-1 text-slate-700 text-[11px] list-disc list-inside leading-relaxed">
+                              {predictionData.actionPlanParents.map((act, i) => (
+                                <li key={i}>{act}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ======================================================== */}
+                  {/* VISUALISASI TREN NILAI SISWA DENGAN RECHARTS             */}
+                  {/* PROGRES PERKEMBANGAN DARI TRIWULAN SEBELUMNYA           */}
+                  {/* ======================================================== */}
+                  {(() => {
+                    const trendData = getStudentQuarterTrends(selectedStudent);
+                    const selectedAspectMeta = ASPEK_LIST.find((a) => a.id === selectedTrendAspectId) || ASPEK_LIST[0];
+
+                    // Prepare single aspect quarterly trend data
+                    const singleAspectTrendData = trendData.quarters.map((q) => {
+                      const rawScore = q[selectedTrendAspectId] !== undefined
+                        ? q[selectedTrendAspectId]
+                        : (selectedTrendAspectId === 'islamicLiteracy' ? q.islamic_literacy : (selectedTrendAspectId === 'islamic_literacy' ? q.islamicLiteracy : undefined));
+                      const scoreNum = typeof rawScore === 'number' ? rawScore : (Number(rawScore) || 0);
+                      return {
+                        periode: q.periode,
+                        label: q.label,
+                        nilai: scoreNum
+                      };
+                    });
+
+                    return (
+                      <div className="bg-slate-50 border-2 border-slate-300 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm print:break-inside-avoid">
+                        {/* Header Tren & Switcher Mode Visualisasi */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-teal-100 text-teal-800">
+                                <TrendingUp className="w-4 h-4" />
+                              </span>
+                              <h4 className="font-black text-sm sm:text-base text-slate-900 uppercase tracking-wide">
+                                📈 Tren Progres Perkembangan Siswa Antar-Triwulan
+                              </h4>
+                            </div>
+                            <p className="text-xs text-slate-600 font-medium">
+                              Visualisasi komparasi capaian hasil belajar dari triwulan sebelumnya (TW 1, TW 2, TW 3) hingga saat ini (TW 4)
+                            </p>
+                          </div>
+
+                          {/* Mode Switcher Buttons */}
+                          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-300 shadow-2xs print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => setTrendChartMode('area')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                trendChartMode === 'area'
+                                  ? 'bg-teal-700 text-white shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Tampilkan grafik kurva tren skor rerata"
+                            >
+                              <Activity className="w-3.5 h-3.5" />
+                              <span>Kurva Rerata</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTrendChartMode('bar')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                trendChartMode === 'bar'
+                                  ? 'bg-teal-700 text-white shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Tampilkan perbandingan batang 9 dimensi TW 3 vs TW 4"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" />
+                              <span>Komparasi 9 Dimensi</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTrendChartMode('dimension')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                                trendChartMode === 'dimension'
+                                  ? 'bg-teal-700 text-white shadow-xs'
+                                  : 'text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Pilih dan fokus pada satu dimensi tertentu"
+                            >
+                              <Compass className="w-3.5 h-3.5" />
+                              <span>Per Dimensi</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Kartu Ringkasan Progres Nilai */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">Triwulan III (Lalu)</span>
+                            <div className="text-lg font-black text-slate-700 mt-0.5">
+                              {trendData.prevRerata} <span className="text-[10px] font-normal text-slate-500">/ 5.0</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-semibold block">Periode sebelumnya</span>
+                          </div>
+
+                          <div className="bg-white p-2.5 rounded-xl border border-teal-300 shadow-2xs">
+                            <span className="text-[10px] font-bold text-teal-700 uppercase block">Triwulan IV (Saat Ini)</span>
+                            <div className="text-lg font-black text-teal-700 mt-0.5">
+                              {trendData.currentRerata} <span className="text-[10px] font-normal text-slate-500">/ 5.0</span>
+                            </div>
+                            <span className="text-[10px] text-teal-600 font-semibold block">Capaian terkini</span>
+                          </div>
+
+                          <div className={`p-2.5 rounded-xl border shadow-2xs ${
+                            trendData.isOverallUp
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                              : 'bg-rose-50 border-rose-300 text-rose-950'
+                          }`}>
+                            <span className="text-[10px] font-bold uppercase block">
+                              {trendData.isOverallUp ? 'Pertumbuhan (Delta)' : 'Penurunan'}
+                            </span>
+                            <div className={`text-lg font-black mt-0.5 flex items-center gap-1 ${
+                              trendData.isOverallUp ? 'text-emerald-700' : 'text-rose-700'
+                            }`}>
+                              {trendData.isOverallUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                              <span>{trendData.isOverallUp ? `+${trendData.overallDiff}` : trendData.overallDiff}</span>
+                              <span className="text-xs font-bold">({trendData.overallPercent > 0 ? `+${trendData.overallPercent}` : trendData.overallPercent}%)</span>
+                            </div>
+                            <span className="text-[10px] font-medium block">
+                              {trendData.isOverallUp ? 'Tren meningkat positif' : 'Perlu stimulasi'}
+                            </span>
+                          </div>
+
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">Lompatan Tertinggi</span>
+                            <div className="text-xs font-black text-indigo-900 truncate mt-1">
+                              {trendData.highestGrowthDimension.nama}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 font-black block">
+                              +{trendData.highestGrowthDimension.selisih} poin (+{trendData.highestGrowthDimension.persen}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Opsi Pemilih Dimensi Jika Mode 'dimension' Aktif */}
+                        {trendChartMode === 'dimension' && (
+                          <div className="flex flex-wrap items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 print:hidden text-xs">
+                            <span className="font-bold text-slate-700">Pilih Dimensi yang Ingin Dilihat:</span>
+                            <select
+                              value={selectedTrendAspectId}
+                              onChange={(e) => setSelectedTrendAspectId(e.target.value)}
+                              className="px-3 py-1 bg-slate-50 border-2 border-teal-600 rounded-lg font-bold text-slate-900 cursor-pointer text-xs"
+                            >
+                              {ASPEK_LIST.map((asp) => (
+                                <option key={asp.id} value={asp.id}>
+                                  Dimensi {asp.no}: {asp.nama}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-slate-500 text-[11px]">
+                              Kategori: {selectedAspectMeta.kategori}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Area Render Recharts */}
+                        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs">
+                          {trendChartMode === 'area' && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+                                <span>Kurva Skor Rerata Perkembangan Siswa (Skala 1.0 - 5.0)</span>
+                                <span className="text-amber-600 font-bold">Garis Putus-Putus: Standar KKM (3.5)</span>
+                              </div>
+                              <div className="w-full h-[250px] sm:h-[280px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <AreaChart
+                                    data={trendData.quarters}
+                                    margin={{ top: 15, right: 20, left: -20, bottom: 5 }}
+                                  >
+                                    <defs>
+                                      <linearGradient id="rerataGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.65} />
+                                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis
+                                      dataKey="periode"
+                                      stroke="#64748b"
+                                      tick={{ fontSize: 11, fontWeight: 'bold' }}
+                                    />
+                                    <YAxis
+                                      domain={[1, 5]}
+                                      ticks={[1, 2, 3, 4, 5]}
+                                      stroke="#64748b"
+                                      tick={{ fontSize: 11 }}
+                                    />
+                                    <RechartsTooltip
+                                      formatter={(val: any) => [`${val} / 5.0`, 'Skor Rerata']}
+                                      labelFormatter={(lbl: any) => {
+                                        const q = trendData.quarters.find((x) => x.periode === lbl);
+                                        return q ? `${lbl} - ${q.label}` : lbl;
+                                      }}
+                                      contentStyle={{
+                                        backgroundColor: '#0f172a',
+                                        color: '#fff',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        border: '1px solid #334155'
+                                      }}
+                                    />
+                                    <ReferenceLine
+                                      y={3.5}
+                                      stroke="#f59e0b"
+                                      strokeDasharray="4 4"
+                                      label={{
+                                        value: 'KKM 3.5 (Standar Baik)',
+                                        position: 'insideTopLeft',
+                                        fill: '#d97706',
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                      }}
+                                    />
+                                    <Area
+                                      type="monotone"
+                                      dataKey="rerata"
+                                      name="Skor Rerata"
+                                      stroke="#0d9488"
+                                      strokeWidth={3.5}
+                                      fillOpacity={1}
+                                      fill="url(#rerataGradient)"
+                                      activeDot={{ r: 7, fill: '#0f766e', stroke: '#ffffff', strokeWidth: 2 }}
+                                    />
+                                  </AreaChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          )}
+
+                          {trendChartMode === 'bar' && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+                                <span>Perbandingan Nilai 9 Dimensi: Triwulan III (Sebelumnya) vs Triwulan IV (Saat Ini)</span>
+                                <span className="text-teal-700 font-bold">Skala Capaian 1.0 - 5.0</span>
+                              </div>
+                              <div className="w-full h-[270px] sm:h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart
+                                    data={trendData.dimensionComparisons}
+                                    margin={{ top: 15, right: 15, left: -20, bottom: 25 }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis
+                                      dataKey="singkatan"
+                                      stroke="#475569"
+                                      tick={{ fontSize: 10, fontWeight: 'bold' }}
+                                      angle={-20}
+                                      textAnchor="end"
+                                    />
+                                    <YAxis
+                                      domain={[0, 5]}
+                                      ticks={[0, 1, 2, 3, 4, 5]}
+                                      stroke="#64748b"
+                                      tick={{ fontSize: 11 }}
+                                    />
+                                    <RechartsTooltip
+                                      formatter={(val: any, name: any) => [`${val} / 5.0`, name]}
+                                      labelFormatter={(lbl: any) => {
+                                        const d = trendData.dimensionComparisons.find((x) => x.singkatan === lbl || x.nama === lbl);
+                                        return d ? `Dimensi: ${d.nama}` : lbl;
+                                      }}
+                                      contentStyle={{
+                                        backgroundColor: '#0f172a',
+                                        color: '#fff',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        border: '1px solid #334155'
+                                      }}
+                                    />
+                                    <RechartsLegend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
+                                    <Bar
+                                      dataKey="triwulanLalu"
+                                      name="Triwulan III (Sebelumnya)"
+                                      fill="#94a3b8"
+                                      radius={[4, 4, 0, 0]}
+                                    />
+                                    <Bar
+                                      dataKey="triwulanIni"
+                                      name="Triwulan IV (Saat Ini)"
+                                      fill="#0d9488"
+                                      radius={[4, 4, 0, 0]}
+                                    />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          )}
+
+                          {trendChartMode === 'dimension' && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+                                <span>Perkembangan Dimensi: {selectedAspectMeta.nama} ({selectedAspectMeta.kategori})</span>
+                                <span className="text-teal-700 font-bold">Progres TW 1 s.d. TW 4</span>
+                              </div>
+                              <div className="w-full h-[250px] sm:h-[280px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart
+                                    data={singleAspectTrendData}
+                                    margin={{ top: 15, right: 20, left: -20, bottom: 5 }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis
+                                      dataKey="periode"
+                                      stroke="#64748b"
+                                      tick={{ fontSize: 11, fontWeight: 'bold' }}
+                                    />
+                                    <YAxis
+                                      domain={[1, 5]}
+                                      ticks={[1, 2, 3, 4, 5]}
+                                      stroke="#64748b"
+                                      tick={{ fontSize: 11 }}
+                                    />
+                                    <RechartsTooltip
+                                      formatter={(val: any) => [`${val} / 5.0`, `Skor ${selectedAspectMeta.nama}`]}
+                                      labelFormatter={(lbl: any) => {
+                                        const q = trendData.quarters.find((x) => x.periode === lbl);
+                                        return q ? `${lbl} - ${q.label}` : lbl;
+                                      }}
+                                      contentStyle={{
+                                        backgroundColor: '#0f172a',
+                                        color: '#fff',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        border: '1px solid #334155'
+                                      }}
+                                    />
+                                    <ReferenceLine
+                                      y={3.5}
+                                      stroke="#f59e0b"
+                                      strokeDasharray="4 4"
+                                      label={{
+                                        value: 'KKM 3.5',
+                                        position: 'insideTopLeft',
+                                        fill: '#d97706',
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                      }}
+                                    />
+                                    <Line
+                                      type="monotone"
+                                      dataKey="nilai"
+                                      name={selectedAspectMeta.nama}
+                                      stroke={selectedAspectMeta.colorBorder || '#7030a0'}
+                                      strokeWidth={3.5}
+                                      dot={{ r: 6, fill: selectedAspectMeta.colorBorder || '#7030a0', stroke: '#ffffff', strokeWidth: 2 }}
+                                      activeDot={{ r: 8, fill: selectedAspectMeta.colorBorder || '#7030a0', stroke: '#ffffff', strokeWidth: 2 }}
+                                    />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Catatan Analisis & Refleksi Guru */}
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 text-xs flex items-start gap-2.5">
+                          <span className="text-lg">📊</span>
+                          <div className="space-y-0.5 text-slate-700">
+                            <span className="font-bold text-slate-900">Catatan Refleksi Progres:</span>
+                            <p className="leading-relaxed">
+                              Ananda <strong className="text-slate-900">{selectedStudent.nama}</strong> mengalami perubahan rerata sebesar{' '}
+                              <strong className={trendData.isOverallUp ? 'text-emerald-700' : 'text-rose-700'}>
+                                {trendData.isOverallUp ? `+${trendData.overallDiff}` : trendData.overallDiff} poin ({trendData.overallPercent > 0 ? `+${trendData.overallPercent}` : trendData.overallPercent}%)
+                              </strong>{' '}
+                              dibandingkan evaluasi Triwulan sebelumnya. Peningkatan paling menonjol tercatat pada aspek{' '}
+                              <strong className="text-teal-800">{trendData.highestGrowthDimension.nama}</strong> dengan kenaikan +{trendData.highestGrowthDimension.selisih} poin.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* TABEL LENGKAP REKAPITULASI 9 DIMENSI */}
+                  {(() => {
+                    const spiderAnalysis = getStudentSpiderAnalysis(selectedStudent);
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                          <span className="uppercase font-black text-xs">📋 Rekapitulasi Nilai & Keterangan 9 Dimensi:</span>
+                          <span className="text-[11px] text-slate-500">Klik 'Periksa' untuk membuka detail</span>
+                        </div>
+                        <div className="overflow-x-auto border border-slate-300 rounded-xl">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-900 text-white text-center font-bold">
+                                <th className="p-2 border-r border-slate-700 w-10">NO</th>
+                                <th className="p-2 border-r border-slate-700 min-w-[140px] text-left">DIMENSI ASPEK</th>
+                                <th className="p-2 border-r border-slate-700 min-w-[130px] text-left">KATEGORI</th>
+                                <th className="p-2 border-r border-slate-700 w-24">SKOR (1-5)</th>
+                                <th className="p-2 border-r border-slate-700 w-24">PREDIKAT</th>
+                                <th className="p-2 border-r border-slate-700 text-left min-w-[280px]">PENJELASAN PEROLEHAN NILAI</th>
+                                <th className="p-2 w-20 print:hidden">AKSI</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {spiderAnalysis.aspects.map((asp) => (
+                                <tr
+                                  key={asp.id}
+                                  className={`hover:bg-slate-50 transition ${asp.id === selectedSpiderAspect ? 'bg-teal-50' : 'bg-white'}`}
+                                >
+                                  <td className="p-2 font-bold text-center border-r border-slate-200">{asp.no}</td>
+                                  <td className="p-2 font-black text-slate-900 uppercase border-r border-slate-200">{asp.nama}</td>
+                                  <td className="p-2 text-slate-600 border-r border-slate-200">{asp.kategori}</td>
+                                  <td className="p-2 text-center font-black text-teal-700 border-r border-slate-200">
+                                    {asp.score} / 5.0
+                                  </td>
+                                  <td className="p-2 text-center border-r border-slate-200">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase text-white ${
+                                      asp.grade === 'Exceptional' ? 'bg-purple-600' :
+                                      asp.grade === 'A' ? 'bg-emerald-600' :
+                                      asp.grade === 'B' ? 'bg-blue-600' :
+                                      asp.grade === 'C' ? 'bg-amber-600' : 'bg-rose-600'
+                                    }`}>
+                                      {asp.grade}
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-slate-700 text-[11px] leading-relaxed border-r border-slate-200">
+                                    {asp.explanation}
+                                  </td>
+                                  <td className="p-2 text-center print:hidden">
+                                    <button
+                                      onClick={() => setSelectedSpiderAspect(asp.id)}
+                                      className="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Periksa
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                /* ====================================================== */
+                /* 2. TAMPILAN LEMBAR RAPOR RESMI (FORMAT ASLI SEKOLAH)   */
+                /* ====================================================== */
+                <React.Fragment>
+                  {/* BANNER UPLOAD KOP SURAT SEKOLAH */}
+                  {!uploadedKopImage ? (
+                    <div className="max-w-[210mm] mx-auto mb-3 bg-amber-50 border-2 border-dashed border-amber-400 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs print:hidden shadow-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl">🏫</span>
+                        <div>
+                          <p className="font-bold text-amber-950">Gunakan Kop Surat Sekolah Anda Sendiri</p>
+                          <p className="text-amber-800 text-[11px]">Unggah gambar kop surat resmi (.PNG / .JPG) agar lembar cetak 100% sama persis dengan berkas asli Anda.</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => kopFileInputRef.current?.click()}
+                        className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow shrink-0 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" /> Upload File Kop
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="max-w-[210mm] mx-auto mb-3 bg-emerald-50 border border-emerald-400 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs print:hidden shadow-xs">
+                      <div className="flex items-center gap-2 text-emerald-900 font-bold">
+                        <span className="text-base">✓</span>
+                        <span>Kop Surat Unggahan Anda sedang aktif dan terpasang pada lembar cetak rapor.</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => kopFileInputRef.current?.click()}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-bold text-[11px] cursor-pointer"
+                        >
+                          Ganti Gambar Kop
+                        </button>
+                        <button
+                          onClick={handleRemoveUploadedKop}
+                          className="px-2.5 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-300 rounded font-bold text-[11px] cursor-pointer"
+                        >
+                          Gunakan Kop Standar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ======================================================== */}
+                  {/* TOOLBAR PERSONALISASI LEMBAR LAPORAN (FONT, UKURAN, WARNA) */}
+                  {/* ======================================================== */}
+                  <div className="max-w-[210mm] mx-auto mb-4 bg-[#0B1528] border border-slate-800 rounded-2xl p-4 sm:p-5 text-white shadow-sm print:hidden space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-500/20 rounded-xl border border-blue-400/30 text-blue-300">
+                          <Palette className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-sm sm:text-base tracking-wide text-white flex items-center gap-2">
+                            <span>Personalisasi Lembar Rapor</span>
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold border border-blue-400/30">
+                              Format Resmi
+                            </span>
+                          </h4>
+                          <p className="text-slate-400 text-xs">
+                            Atur jenis font, skala huruf, dan tema aksen warna tabel pada lembar cetak
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setReportFontFamily('Arial');
+                          setReportFontSize('base');
+                          setTableThemeColor('default');
+                          setPrintStatus('Pengaturan font dan tema tabel dikembalikan ke standar awal!');
+                          setTimeout(() => setPrintStatus(null), 3500);
+                        }}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Kembalikan jenis font, ukuran, dan tema warna ke standar awal"
+                      >
+                        ↺ Reset ke Standar
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+                      {/* 1. JENIS FONT */}
+                      <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <label className="font-bold text-blue-300 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                          <Type className="w-3.5 h-3.5" /> 1. Jenis Font Dokumen:
+                        </label>
+                        <select
+                          value={reportFontFamily}
+                          onChange={(e) => setReportFontFamily(e.target.value as any)}
+                          className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs font-bold focus:border-blue-500 focus:outline-none cursor-pointer"
+                        >
+                          {FONT_OPTIONS.map((font) => (
+                            <option key={font.id} value={font.id} className="bg-slate-900 text-white">
+                              {font.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400">
+                          Font aktif: <strong className="text-white">{FONT_OPTIONS.find(f => f.id === reportFontFamily)?.name}</strong>
+                        </p>
+                      </div>
+
+                      {/* 2. UKURAN FONT */}
+                      <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <label className="font-bold text-blue-300 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                          <span>🔤</span> 2. Ukuran Huruf:
+                        </label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {FONT_SIZES.map((sz) => (
+                            <button
+                              key={sz.id}
+                              type="button"
+                              onClick={() => setReportFontSize(sz.id as any)}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition text-center cursor-pointer ${
+                                reportFontSize === sz.id
+                                  ? 'bg-[#1E5BF9] text-white border-blue-400 shadow-xs font-extrabold'
+                                  : 'bg-white/10 text-slate-300 border-slate-700 hover:bg-white/15 hover:text-white'
+                              }`}
+                            >
+                              {sz.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Tabel: {FONT_SIZES.find(s => s.id === reportFontSize)?.tableFont} • Dokumen: {FONT_SIZES.find(s => s.id === reportFontSize)?.bodyFont}
+                        </p>
+                      </div>
+
+                      {/* 3. TEMA WARNA TABEL */}
+                      <div className="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <label className="font-bold text-blue-300 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                          <Palette className="w-3.5 h-3.5" /> 3. Warna pada Tabel:
+                        </label>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {Object.values(TABLE_THEMES).map((thm) => {
+                            const isSelected = tableThemeColor === thm.id;
+                            return (
+                              <button
+                                key={thm.id}
+                                type="button"
+                                onClick={() => setTableThemeColor(thm.id)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-white text-slate-950 border-white shadow-xs font-extrabold ring-2 ring-blue-400'
+                                    : 'bg-white/10 text-slate-200 border-slate-700 hover:bg-white/15'
+                                }`}
+                                title={thm.name}
+                              >
+                                <span
+                                  className="w-3 h-3 rounded-full border border-black/30 shrink-0 inline-block shadow-xs"
+                                  style={{ backgroundColor: thm.subHeaderBg }}
+                                />
+                                <span className="truncate max-w-[85px]">{thm.name.split(' ')[0]}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Tema aktif: <strong className="text-white">{TABLE_THEMES[tableThemeColor]?.name || 'Standar Excel'}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ======================================================== */}
+                  {/* LEMBAR RAPOR CETAK RESMI (STANDAR A4/F4 SIAP CETAK/PDF)  */}
+                  {/* ======================================================== */}
+                  <div
+                    id="lembar-rapor-cetak"
+                    style={{
+                      fontFamily: (FONT_OPTIONS.find((f) => f.id === reportFontFamily) || FONT_OPTIONS[0]).css,
+                      fontSize: (FONT_SIZES.find((s) => s.id === reportFontSize) || FONT_SIZES[1]).bodyFont
+                    }}
+                    className="bg-white mx-auto border-2 border-black p-6 sm:p-10 max-w-[210mm] text-black print:border-none print:p-0 print:m-0 print:max-w-none shadow-sm transition-all"
+                  >
+                {/* 1. KOP SEKOLAH RESMI ATAU KOP GAMBAR UNGGAHAN PENGGUNA */}
+                {showKopSekolah && (
+                  uploadedKopImage ? (
+                    <div className="relative group text-center mb-3 pb-2 border-b-2 border-black">
+                      <img
+                        src={uploadedKopImage}
+                        alt="Kop Surat Resmi Sekolah"
+                        className="w-full max-h-36 sm:max-h-44 object-contain mx-auto"
+                      />
+                      <div className="mt-1 print:hidden flex items-center justify-center gap-2 text-xs">
+                        <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300">
+                          ✓ Menggunakan Kop Unggahan Anda
+                        </span>
+                        <button
+                          onClick={() => kopFileInputRef.current?.click()}
+                          className="text-blue-700 hover:underline font-semibold"
+                        >
+                          Ganti Gambar
+                        </button>
+                        <span className="text-slate-300">•</span>
+                        <button
+                          onClick={handleRemoveUploadedKop}
+                          className="text-red-600 hover:underline font-semibold"
+                        >
+                          Hapus / Reset
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pb-1 mb-3">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* LOGO SEKOLAH (KIRI) */}
+                        <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm">
+                            <circle cx="50" cy="50" r="47" fill="#0070c0" stroke="#ffc000" strokeWidth="3.5" />
+                            <circle cx="50" cy="50" r="39" fill="#ffffff" stroke="#0070c0" strokeWidth="2" />
+                            {/* Buku / Al-Qur'an Terbuka */}
+                            <path d="M 27 58 Q 50 48 50 63 Q 50 48 73 58 L 73 42 Q 50 33 50 47 Q 50 33 27 42 Z" fill="#00b050" stroke="#004d00" strokeWidth="1.5" />
+                            {/* Bintang Emas */}
+                            <polygon points="50,23 53,31 62,31 55,36 58,44 50,39 42,44 45,36 38,31 47,31" fill="#ffc000" stroke="#b38600" strokeWidth="1" />
+                            <text x="50" y="78" textAnchor="middle" fontSize="6.5" fontWeight="900" fill="#002060" fontFamily="sans-serif">SD KHALIMUL KHASAN</text>
+                            <text x="50" y="85" textAnchor="middle" fontSize="5.5" fontWeight="800" fill="#c00000" fontFamily="sans-serif">BILINGUAL SCHOOL</text>
+                          </svg>
+                        </div>
+
+                        {/* IDENTITAS KOP (TENGAH) */}
+                        <div className="flex-1 text-center px-2">
+                          <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-800">
+                            {metaRapor.kopSekolah.instansi}
+                          </h3>
+                          <h1 className="text-base sm:text-xl font-black uppercase tracking-wide text-black my-0.5">
+                            {metaRapor.kopSekolah.namaSekolah}
+                          </h1>
+                          <p className="text-[10.5px] font-bold text-slate-700">
+                            {metaRapor.kopSekolah.akreditasi} • {metaRapor.kopSekolah.npsn}
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            {metaRapor.kopSekolah.alamat}
+                          </p>
+                          <p className="text-[9.5px] text-slate-500 italic">
+                            {metaRapor.kopSekolah.kontak}
+                          </p>
+                        </div>
+
+                        {/* LOGO PENDIDIKAN / TUT WURI (KANAN) */}
+                        <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm">
+                            <polygon points="50,6 94,84 6,84" fill="#0070c0" stroke="#ffc000" strokeWidth="3" />
+                            <polygon points="50,18 84,80 16,80" fill="#ffffff" />
+                            <circle cx="50" cy="42" r="14" fill="#ffc000" stroke="#b38600" strokeWidth="1" />
+                            <path d="M 50 32 L 53 45 L 47 45 Z" fill="#c00000" />
+                            <path d="M 32 64 Q 50 56 68 64 Q 50 72 32 64 Z" fill="#0070c0" />
+                            <text x="50" y="74" textAnchor="middle" fontSize="6.5" fontWeight="900" fill="#002060" fontFamily="sans-serif">TUT WURI HANDAYANI</text>
+                          </svg>
+                        </div>
+                      </div>
+
+                      {/* GARIS GANDA RESMI KOP SURAT */}
+                      <div className="border-b-[3px] border-black mt-2" />
+                      <div className="border-b-[1px] border-black mt-[1.5px]" />
+                    </div>
+                  )
+                )}
+
+                {/* 3 BARIS JUDUL LAPORAN RESMI (TERHUBUNG 100% KE DATABASE KOTAK 4) */}
+                <div className="text-center my-3 space-y-0.5">
+                  {metaRapor.judulLaporan.baris1 && (
+                    <h1 className="text-sm sm:text-base font-black uppercase tracking-wider text-black leading-tight">
+                      {metaRapor.judulLaporan.baris1}
+                    </h1>
+                  )}
+                  {metaRapor.judulLaporan.baris2 && (
+                    <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-wide text-black leading-tight">
+                      {metaRapor.judulLaporan.baris2}
+                    </h2>
+                  )}
+                  {metaRapor.judulLaporan.baris3 && (
+                    <h3 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-800 leading-tight">
+                      {metaRapor.judulLaporan.baris3}
+                    </h3>
+                  )}
+                </div>
+
+                {/* 2. IDENTITAS PESERTA DIDIK (FORMAT RINGKAS ATAU TABEL) */}
+                {studentInfoStyle === 'simple' ? (
+                  <div className="mb-3 text-xs font-bold leading-relaxed">
+                    <table className="border-none w-auto mb-1">
+                      <tbody>
+                        <tr>
+                          <td className="border-none py-0.5 pr-4 font-bold w-28 text-slate-800">Nama Siswa</td>
+                          <td className="border-none py-0.5 font-black uppercase text-black">: {selectedStudent.nama}</td>
+                        </tr>
+                        <tr>
+                          <td className="border-none py-0.5 pr-4 font-bold text-slate-800">NIS</td>
+                          <td className="border-none py-0.5 font-mono font-bold text-black">: {selectedStudent.nis}</td>
+                        </tr>
+                        <tr>
+                          <td className="border-none py-0.5 pr-4 font-bold text-slate-800">Kelas</td>
+                          <td className="border-none py-0.5 font-bold text-black">: {selectedStudent.kelas}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div
+                    className="mb-4 border-2 overflow-hidden bg-white"
+                    style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}
+                  >
+                    <div
+                      className="px-3 py-1 border-b-2 font-black text-xs uppercase tracking-wider text-center"
+                      style={{
+                        backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerBg,
+                        color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerText,
+                        borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                      }}
+                    >
+                      IDENTITAS PESERTA DIDIK
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <tbody>
+                        <tr className="border-b" style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}>
+                          <td
+                            className="w-36 sm:w-44 p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Nama Peserta Didik
+                          </td>
+                          <td className="p-1.5 font-black uppercase text-black border-r" style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}>
+                            : {selectedStudent.nama}
+                          </td>
+                          <td
+                            className="w-28 sm:w-36 p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Kelas / Rombel
+                          </td>
+                          <td className="p-1.5 font-bold text-black">
+                            : {selectedStudent.kelas}
+                          </td>
+                        </tr>
+                        <tr className="border-b" style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}>
+                          <td
+                            className="p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Nomor Induk Siswa (NIS)
+                          </td>
+                          <td className="p-1.5 font-mono font-bold text-black border-r" style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}>
+                            : {selectedStudent.nis}
+                          </td>
+                          <td
+                            className="p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Fase / Semester
+                          </td>
+                          <td className="p-1.5 font-bold text-black">
+                            : Fase B / Semester I (Ganjil)
+                          </td>
+                        </tr>
+                        <tr>
+                          <td
+                            className="p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Nama Sekolah
+                          </td>
+                          <td className="p-1.5 font-bold text-black border-r" style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}>
+                            : {metaRapor.kopSekolah.namaSekolah}
+                          </td>
+                          <td
+                            className="p-1.5 font-bold border-r text-slate-800"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).accentBg,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Tanggal Raport
+                          </td>
+                          <td className="p-1.5 font-bold text-black">
+                            : {metaRapor.tempatRaport ? `${metaRapor.tempatRaport}, ` : ''}{metaRapor.tanggalRaport}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 3. TABEL PENILAIAN CENTANG */}
+                <div
+                  className="mb-5 overflow-x-auto border-2"
+                  style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}
+                >
+                  <table className="w-full text-xs border-collapse">
+                    {tableHeaderStyle === 'screenshot2' ? (
+                      /* HEADER FORMAT RESMI EXCEL DENGAN PERSONALISASI WARNA */
+                      <thead>
+                        <tr
+                          className="border-b text-center font-black uppercase text-[11px]"
+                          style={{ borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor }}
+                        >
+                          <th
+                            rowSpan={2}
+                            className="p-2 w-10 border-r text-center font-black"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            NO
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="p-2 w-28 border-r text-center font-black"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            ASPEK
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="p-2 border-r text-center font-black min-w-[200px]"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            INDIKATOR KEBERHASILAN
+                          </th>
+                          <th
+                            colSpan={5}
+                            className="p-1.5 text-center font-black"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).headerText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            PENILAIAN
+                          </th>
+                        </tr>
+                        <tr
+                          className="border-b-2 text-center font-black text-[10.5px]"
+                          style={{
+                            backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                            color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                            borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                          }}
+                        >
+                          <th
+                            className="p-1.5 w-24 border-r text-center"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Exceptional
+                          </th>
+                          <th
+                            className="p-1.5 w-12 border-r text-center"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            A
+                          </th>
+                          <th
+                            className="p-1.5 w-12 border-r text-center"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            B
+                          </th>
+                          <th
+                            className="p-1.5 w-12 border-r text-center"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            C
+                          </th>
+                          <th
+                            className="p-1.5 w-16 text-center"
+                            style={{
+                              backgroundColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderBg,
+                              color: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).subHeaderText,
+                              borderColor: (TABLE_THEMES[tableThemeColor] || TABLE_THEMES.default).borderColor
+                            }}
+                          >
+                            Defisit
+                          </th>
+                        </tr>
+                      </thead>
+                    ) : (
+                      /* HEADER KLASIK BERWARNA PERSIS GAMBAR 1 */
+                      <thead>
+                        <tr className="border-b-2 border-black text-center font-black uppercase tracking-wider text-[11px]">
+                          <th className="p-2 w-10 border-r border-black bg-[#d9d9d9] text-black">
+                            NO
+                          </th>
+                          <th className="p-2 border-r border-black text-left min-w-[220px] bg-[#d9d9d9] text-black">
+                            ASPEK PENILAIAN / PERKEMBANGAN
+                          </th>
+                          <th className="p-2 w-28 border-r border-black text-center bg-[#7030a0] text-white">
+                            EXCEPTIONAL
+                          </th>
+                          <th className="p-2 w-16 border-r border-black text-center bg-[#00b050] text-white">
+                            A
+                          </th>
+                          <th className="p-2 w-16 border-r border-black text-center bg-[#0070c0] text-white">
+                            B
+                          </th>
+                          <th className="p-2 w-16 border-r border-black text-center bg-[#ffc000] text-black">
+                            C
+                          </th>
+                          <th className="p-2 w-20 text-center bg-[#c00000] text-white">
+                            DEFISIT
+                          </th>
+                        </tr>
+                      </thead>
+                    )}
+                    <tbody className="divide-y divide-black">
+                      {printViewMode === 'detail' ? (
+                        ASPEK_LIST.map((aspek) => {
+                          return aspek.indikatorList.map((ind, indIdx) => {
+                            const sec = (selectedStudent[aspek.id as keyof SiswaData] as Record<string, string>) || {};
+                            const val = sec[ind.key] || '';
+
+                            return (
+                              <tr key={`${aspek.id}-${ind.key}`} className="bg-white hover:bg-slate-50 transition">
+                                {indIdx === 0 && (
+                                  <td
+                                    rowSpan={aspek.indikatorList.length}
+                                    className="p-1.5 text-center font-bold border-r border-black bg-white align-middle w-10"
+                                  >
+                                    {aspek.no}
+                                  </td>
+                                )}
+                                {indIdx === 0 && (
+                                  <td
+                                    rowSpan={aspek.indikatorList.length}
+                                    className="p-1.5 text-center font-bold uppercase text-[11px] text-black border-r border-black bg-white align-middle w-28"
+                                  >
+                                    {aspek.nama}
+                                  </td>
+                                )}
+                                <td className="p-1.5 border-r border-black text-left text-[11px] text-black">
+                                  {ind.labelLengkap}
+                                </td>
+                                <td
+                                  onClick={() => updateStudentIndicator(selectedStudent.no, aspek.id, ind.key, 'Exceptional')}
+                                  className="p-1.5 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-24"
+                                  title="Pilih Exceptional"
+                                >
+                                  {val === 'Exceptional' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                                </td>
+                                <td
+                                  onClick={() => updateStudentIndicator(selectedStudent.no, aspek.id, ind.key, 'A')}
+                                  className="p-1.5 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                                  title="Pilih A"
+                                >
+                                  {val === 'A' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                                </td>
+                                <td
+                                  onClick={() => updateStudentIndicator(selectedStudent.no, aspek.id, ind.key, 'B')}
+                                  className="p-1.5 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                                  title="Pilih B"
+                                >
+                                  {val === 'B' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                                </td>
+                                <td
+                                  onClick={() => updateStudentIndicator(selectedStudent.no, aspek.id, ind.key, 'C')}
+                                  className="p-1.5 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                                  title="Pilih C"
+                                >
+                                  {val === 'C' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                                </td>
+                                <td
+                                  onClick={() => updateStudentIndicator(selectedStudent.no, aspek.id, ind.key, 'Defisit')}
+                                  className="p-1.5 text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-16"
+                                  title="Pilih Defisit"
+                                >
+                                  {val === 'Defisit' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })
+                      ) : (
+                        ASPEK_LIST.map((aspek) => {
+                          const grade = getAspectGrade(selectedStudent, aspek.id);
+                          return (
+                            <tr key={aspek.id} className="bg-white hover:bg-slate-50 transition">
+                              <td className="p-2 text-center font-bold border-r border-black w-10">{aspek.no}</td>
+                              <td className="p-2 text-center font-bold uppercase text-[11px] border-r border-black w-28">{aspek.nama}</td>
+                              <td className="p-2 text-left border-r border-black">{aspek.kategori}</td>
+                              <td
+                                onClick={() => updateStudentOverallGrade(selectedStudent.no, aspek.id, 'Exceptional')}
+                                className="p-2 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-24"
+                              >
+                                {grade === 'Exceptional' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                              </td>
+                              <td
+                                onClick={() => updateStudentOverallGrade(selectedStudent.no, aspek.id, 'A')}
+                                className="p-2 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                              >
+                                {grade === 'A' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                              </td>
+                              <td
+                                onClick={() => updateStudentOverallGrade(selectedStudent.no, aspek.id, 'B')}
+                                className="p-2 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                              >
+                                {grade === 'B' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                              </td>
+                              <td
+                                onClick={() => updateStudentOverallGrade(selectedStudent.no, aspek.id, 'C')}
+                                className="p-2 border-r border-black text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-12"
+                              >
+                                {grade === 'C' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                              </td>
+                              <td
+                                onClick={() => updateStudentOverallGrade(selectedStudent.no, aspek.id, 'Defisit')}
+                                className="p-2 text-center font-bold cursor-pointer hover:bg-slate-100 select-none w-16"
+                              >
+                                {grade === 'Defisit' && <span className="font-bold text-base leading-none text-black">✓</span>}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 4. REFLEKSI PERKEMBANGAN SISWA */}
+                <div className="border border-black mb-4 overflow-hidden bg-white">
+                  <div className="border-b border-black px-3 py-1 font-bold text-xs uppercase flex items-center justify-between text-black bg-slate-50">
+                    <span>Refleksi Perkembangan Siswa:</span>
+                    <button
+                      onClick={() => {
+                        updateStudentDeskripsiRapor(selectedStudent.no, generateDefaultDeskripsi(selectedStudent));
+                        setPrintStatus('Deskripsi berhasil diatur ulang!');
+                        setTimeout(() => setPrintStatus(null), 3000);
+                      }}
+                      className="text-[10px] font-bold text-slate-700 bg-white border border-slate-300 px-2 py-0.5 rounded hover:bg-slate-100 print:hidden flex items-center gap-1 shadow-xs"
+                      title="Reset ke narasi standar nilai siswa"
+                    >
+                      <Sparkles className="w-3 h-3 text-slate-600" /> Reset Narasi
+                    </button>
+                  </div>
+                  <div className="p-2.5 bg-white">
+                    <textarea
+                      rows={4}
+                      value={selectedStudent.deskripsiRapor ?? generateDefaultDeskripsi(selectedStudent)}
+                      onChange={(e) => updateStudentDeskripsiRapor(selectedStudent.no, e.target.value)}
+                      className="w-full text-xs leading-relaxed text-black bg-transparent focus:bg-slate-50 rounded focus:outline-none resize-y border-none font-sans print:hidden"
+                      placeholder="Tuliskan refleksi capaian perkembangan siswa..."
+                    />
+                    {/* Tampilan teks statis saat dicetak */}
+                    <div className="hidden print:block text-xs leading-relaxed whitespace-pre-wrap">
+                      {selectedStudent.deskripsiRapor ?? generateDefaultDeskripsi(selectedStudent)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. SARAN */}
+                <div className="border border-black mb-6 overflow-hidden bg-white">
+                  <div className="border-b border-black px-3 py-1 font-bold text-xs uppercase flex items-center justify-between text-black bg-slate-50">
+                    <span>Saran:</span>
+                    <button
+                      onClick={() => {
+                        updateStudentSaranRapor(selectedStudent.no, generateDefaultSaran(selectedStudent));
+                        setPrintStatus('Saran berhasil diatur ulang!');
+                        setTimeout(() => setPrintStatus(null), 3000);
+                      }}
+                      className="text-[10px] font-bold text-slate-700 bg-white border border-slate-300 px-2 py-0.5 rounded hover:bg-slate-100 print:hidden flex items-center gap-1 shadow-xs"
+                      title="Reset ke saran standar kelemahan siswa"
+                    >
+                      <Sparkles className="w-3 h-3 text-slate-600" /> Reset Saran
+                    </button>
+                  </div>
+                  <div className="p-2.5 bg-white">
+                    <textarea
+                      rows={5}
+                      value={selectedStudent.saranRapor ?? generateDefaultSaran(selectedStudent)}
+                      onChange={(e) => updateStudentSaranRapor(selectedStudent.no, e.target.value)}
+                      className="w-full text-xs leading-relaxed text-black bg-transparent focus:bg-slate-50 rounded focus:outline-none resize-y border-none font-sans print:hidden"
+                      placeholder="Tuliskan saran tindak lanjut bagi siswa..."
+                    />
+                    {/* Tampilan teks statis saat dicetak */}
+                    <div className="hidden print:block text-xs leading-relaxed whitespace-pre-wrap">
+                      {selectedStudent.saranRapor ?? generateDefaultSaran(selectedStudent)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. KOLOM TANDA TANGAN (HANYA KEPALA SEKOLAH DAN GURU KELAS SEJAJAR) */}
+                <div className="pt-4 text-xs">
+                  <div className="grid grid-cols-2 text-center gap-6">
+                    {/* KEPALA SEKOLAH */}
+                    <div>
+                      <p className="font-semibold text-black mb-16">
+                        Mengetahui,<br />Kepala Sekolah
+                      </p>
+                      <p className="font-black underline uppercase text-black">
+                        {metaRapor.kepalaSekolah.nama}
+                      </p>
+                      <p className="font-mono text-[10px] text-slate-700 font-semibold">
+                        NIY. {metaRapor.kepalaSekolah.niy}
+                      </p>
+                    </div>
+
+                    {/* GURU KELAS */}
+                    <div>
+                      <p className="font-semibold text-black mb-16">
+                        {metaRapor.tempatRaport}, {metaRapor.tanggalRaport}<br />
+                        Guru Kelas IV,
+                      </p>
+                      <p className="font-black underline uppercase text-black">
+                        {metaRapor.guruKelas.nama}
+                      </p>
+                      <p className="font-mono text-[10px] text-slate-700 font-semibold">
+                        NIY. {metaRapor.guruKelas.niy}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </React.Fragment>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================= */}
+          {/* TAB: MANAJEMEN AKUN GURU & KELAS BINAAN (/teachers)     */}
+          {/* ======================================================= */}
+          {(currentPage === 'teachers' || currentPage === 'guru_manage') && (
+            <TeacherManagement
+              teachers={teachersList}
+              currentUser={currentUser}
+              students={masterStudents}
+              onSaveTeacher={async (data, id) => {
+                setIsFirebaseSyncing(true);
+                try {
+                  const teacherId = id || `teacher_${Date.now()}`;
+                  const teacherRef = ref(db, `teachers/${teacherId}`);
+                  await set(teacherRef, data);
+                  toastSuccess(
+                    id ? 'Data Guru Diperbarui' : 'Guru Baru Ditambahkan',
+                    `Akun guru "${data.nama}" untuk ${data.namaKelas} berhasil disimpan ke Firebase node /teachers.`
+                  );
+                } catch (err: any) {
+                  toastError('Gagal Menyimpan Guru', err?.message || 'Gagal menyimpan ke Firebase.');
+                } finally {
+                  setIsFirebaseSyncing(false);
+                }
+              }}
+              onDeleteTeacher={async (id, name) => {
+                setIsFirebaseSyncing(true);
+                try {
+                  const teacherRef = ref(db, `teachers/${id}`);
+                  await remove(teacherRef);
+                  toastSuccess('Akun Guru Dihapus', `Data guru "${name}" telah dihapus dari Firebase.`);
+                } catch (err: any) {
+                  toastError('Gagal Menghapus Guru', err?.message || 'Gagal menghapus dari Firebase.');
+                } finally {
+                  setIsFirebaseSyncing(false);
+                }
+              }}
+              onLoginAsTeacher={(teacher) => {
+                const guruUser: UserAccount = {
+                  role: 'guru',
+                  username: teacher.username,
+                  nama: teacher.nama,
+                  kelas: teacher.namaKelas,
+                  tingkatKelas: teacher.tingkatKelas
+                };
+                setCurrentUser(guruUser);
+                setSelectedClassFilter(teacher.tingkatKelas);
+                toastSuccess(
+                  'Login Guru Berhasil',
+                  `Sekarang aktif sebagai ${teacher.nama}. Akses rapor terisolasi aman untuk ${teacher.namaKelas}.`
+                );
+              }}
+              onSelectClassForReview={(tingkatKelas, namaKelas) => {
+                setSelectedClassFilter(tingkatKelas);
+                setCurrentPage('database');
+                toastInfo(
+                  'Membuka Data Siswa',
+                  `Menampilkan data siswa untuk ${namaKelas}.`
+                );
+              }}
+              onNavigateHome={() => setCurrentPage('home')}
+              isSyncing={isFirebaseSyncing}
+              firebaseConnected={firebaseConnected}
+            />
+          )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
