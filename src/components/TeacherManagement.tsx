@@ -5,10 +5,6 @@ import {
   UserPlus,
   Key,
   ShieldCheck,
-  Lock,
-  Unlock,
-  Eye,
-  EyeOff,
   Edit3,
   Trash2,
   Search,
@@ -23,7 +19,6 @@ import {
   Layers,
   Printer,
   RefreshCw,
-  LogIn,
   ExternalLink,
   Info,
   Phone,
@@ -41,7 +36,6 @@ interface TeacherManagementProps {
   students: StudentRecord[];
   onSaveTeacher: (data: Omit<TeacherRecord, 'id'>, id?: string) => Promise<void>;
   onDeleteTeacher: (id: string, name: string) => Promise<void>;
-  onLoginAsTeacher: (teacher: TeacherRecord) => void;
   onSelectClassForReview: (tingkatKelas: string, namaKelas: string) => void;
   onNavigateHome: () => void;
   isSyncing: boolean;
@@ -63,7 +57,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
   students = [],
   onSaveTeacher,
   onDeleteTeacher,
-  onLoginAsTeacher,
   onSelectClassForReview,
   onNavigateHome,
   isSyncing,
@@ -76,12 +69,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherRecord | null>(null);
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
-
-  // Quick Change Password Modal
-  const [passwordModalTeacher, setPasswordModalTeacher] = useState<TeacherRecord | null>(null);
-  const [newQuickPassword, setNewQuickPassword] = useState('');
-  const [showQuickPassword, setShowQuickPassword] = useState(false);
 
   // Delete confirmation modal
   const [deleteModalTeacher, setDeleteModalTeacher] = useState<TeacherRecord | null>(null);
@@ -92,7 +79,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
     tingkatKelas: '4',
     namaKelas: 'Kelas IV (Fase B)',
     username: '',
-    password: '',
     niy: '',
     email: '',
     telepon: '',
@@ -100,12 +86,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
     catatan: ''
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [showFormPassword, setShowFormPassword] = useState(false);
-
-  const togglePasswordVisibility = (id: string) => {
-    setVisiblePasswords((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const handleOpenAddModal = () => {
     setEditingTeacher(null);
     setFormData({
@@ -113,7 +93,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       tingkatKelas: '4',
       namaKelas: 'Kelas IV (Fase B)',
       username: '',
-      password: `guru4_${Math.floor(1000 + Math.random() * 9000)}#`,
       niy: '',
       email: '',
       telepon: '',
@@ -121,7 +100,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       catatan: ''
     });
     setFormErrors({});
-    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -132,7 +110,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       tingkatKelas: teacher.tingkatKelas || '4',
       namaKelas: teacher.namaKelas || 'Kelas IV (Fase B)',
       username: teacher.username,
-      password: teacher.password,
       niy: teacher.niy || '',
       email: teacher.email || '',
       telepon: teacher.telepon || '',
@@ -140,7 +117,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       catatan: teacher.catatan || ''
     });
     setFormErrors({});
-    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -159,11 +135,9 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       .replace(/[^a-z0-9]/g, '')
       .slice(0, 8);
     const user = cleanName ? `guru_${cleanName}` : `guru${formData.tingkatKelas}_${Math.floor(100 + Math.random() * 900)}`;
-    const pass = `Akun${formData.tingkatKelas}_${Math.floor(1000 + Math.random() * 9000)}#`;
     setFormData((prev) => ({
       ...prev,
-      username: user,
-      password: pass
+      username: user
     }));
   };
 
@@ -174,11 +148,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
       errors.username = 'Username wajib diisi!';
     } else if (formData.username.length < 3) {
       errors.username = 'Username minimal 3 karakter!';
-    }
-    if (!formData.password.trim()) {
-      errors.password = 'Password wajib diisi!';
-    } else if (formData.password.length < 4) {
-      errors.password = 'Password minimal 4 karakter!';
     }
     if (!formData.namaKelas.trim()) errors.namaKelas = 'Nama kelas binaan wajib diisi!';
 
@@ -200,31 +169,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
 
     await onSaveTeacher(formData, editingTeacher?.id);
     setIsModalOpen(false);
-  };
-
-  const handleSaveQuickPassword = async () => {
-    if (!passwordModalTeacher) return;
-    if (!newQuickPassword.trim() || newQuickPassword.length < 4) {
-      alert('Password baru minimal 4 karakter!');
-      return;
-    }
-
-    const updatedData: Omit<TeacherRecord, 'id'> = {
-      nama: passwordModalTeacher.nama,
-      tingkatKelas: passwordModalTeacher.tingkatKelas,
-      namaKelas: passwordModalTeacher.namaKelas,
-      username: passwordModalTeacher.username,
-      password: newQuickPassword.trim(),
-      niy: passwordModalTeacher.niy,
-      email: passwordModalTeacher.email,
-      telepon: passwordModalTeacher.telepon,
-      mataPelajaran: passwordModalTeacher.mataPelajaran,
-      catatan: passwordModalTeacher.catatan
-    };
-
-    await onSaveTeacher(updatedData, passwordModalTeacher.id);
-    setPasswordModalTeacher(null);
-    setNewQuickPassword('');
   };
 
   const handleConfirmDelete = async () => {
@@ -336,9 +280,9 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
           <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-800 flex items-start gap-2.5">
             <Key className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <strong className="text-white block font-bold">Kredensial Login Tersimpan</strong>
+              <strong className="text-white block font-bold">Login Firebase Authentication</strong>
               <span className="text-slate-400 text-[11px]">
-                Akun guru disimpan secara aman di Firebase RTDB Asia-Southeast1.
+                Password tidak disimpan di profil guru atau Realtime Database.
               </span>
             </div>
           </div>
@@ -346,9 +290,9 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
           <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-800 flex items-start gap-2.5">
             <Layers className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
             <div>
-              <strong className="text-white block font-bold">Simulasi Instan / Uji Peran</strong>
+              <strong className="text-white block font-bold">Akses Berbasis Peran</strong>
               <span className="text-slate-400 text-[11px]">
-                Gunakan tombol "Masuk" pada kartu untuk menguji isolasi hak akses kelas binaan.
+                Hak akses guru ditetapkan dari profil Firebase dan kelas binaan.
               </span>
             </div>
           </div>
@@ -491,7 +435,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
           {filteredTeachers.map((teacher) => {
             const isCurrentLoggedIn = currentUser?.username === teacher.username;
             const studentCount = getStudentCountForClass(teacher.tingkatKelas, teacher.namaKelas);
-            const isPasswordVisible = visiblePasswords[teacher.id] || false;
 
             return (
               <div
@@ -556,38 +499,11 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                   </div>
                 </div>
 
-                {/* Body Card: Kredensial Login & Kontak */}
+                {/* Body Card: Account name & contact */}
                 <div className="p-4 space-y-3 text-xs bg-white flex-1">
-                  {/* Akun Login Info */}
-                  <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/80 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                        <Key className="w-3 h-3 text-amber-500" />
-                        Akun Login:
-                      </span>
-                      <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border border-slate-200 text-xs">
-                        {teacher.username}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        Password:
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-semibold text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200 text-xs">
-                          {isPasswordVisible ? teacher.password : '••••••••'}
-                        </span>
-                        <button
-                          onClick={() => togglePasswordVisibility(teacher.id)}
-                          className="p-1 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                          title={isPasswordVisible ? 'Sembunyikan password' : 'Lihat password'}
-                        >
-                          {isPasswordVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      </div>
-                    </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+                    Username: <strong className="font-mono text-slate-800">{teacher.username}</strong>
+                    <p className="mt-1">Password dikelola oleh Firebase Authentication dan tidak ditampilkan di sini.</p>
                   </div>
 
                   {/* Kontak & Email */}
@@ -612,16 +528,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                 {/* Footer Action Buttons */}
                 <div className="p-3 bg-slate-50/90 border-t border-slate-200 flex flex-wrap items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5">
-                    {/* Masuk Sebagai Guru */}
-                    <button
-                      onClick={() => onLoginAsTeacher(teacher)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                      title="Masuk sebagai guru ini untuk mengelola rapor kelas binaannya"
-                    >
-                      <LogIn className="w-3.5 h-3.5" />
-                      <span>Masuk</span>
-                    </button>
-
                     {/* Kelola Rapor Kelas */}
                     <button
                       onClick={() => onSelectClassForReview(teacher.tingkatKelas, teacher.namaKelas)}
@@ -634,18 +540,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {/* Ganti Password Cepat */}
-                    <button
-                      onClick={() => {
-                        setPasswordModalTeacher(teacher);
-                        setNewQuickPassword('');
-                      }}
-                      className="p-2 rounded-xl bg-white hover:bg-amber-50 text-amber-600 border border-slate-200 hover:border-amber-400 transition cursor-pointer"
-                      title="Ubah Password Guru"
-                    >
-                      <Key className="w-3.5 h-3.5" />
-                    </button>
-
                     {/* Edit Guru */}
                     <button
                       onClick={() => handleOpenEditModal(teacher)}
@@ -698,7 +592,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                   <th className="p-3.5">NAMA GURU & GELAR</th>
                   <th className="p-3.5">KELAS BINAAN</th>
                   <th className="p-3.5">USERNAME</th>
-                  <th className="p-3.5">PASSWORD</th>
                   <th className="p-3.5">KONTAK / EMAIL</th>
                   <th className="p-3.5 text-center">SISWA</th>
                   <th className="p-3.5 text-center w-52">MENU AKSI</th>
@@ -707,7 +600,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {filteredTeachers.map((teacher, idx) => {
                   const studentCount = getStudentCountForClass(teacher.tingkatKelas, teacher.namaKelas);
-                  const isPasswordVisible = visiblePasswords[teacher.id] || false;
                   const isCurrentLoggedIn = currentUser?.username === teacher.username;
 
                   return (
@@ -749,19 +641,6 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                         </span>
                       </td>
                       <td className="p-3.5 font-mono font-bold text-slate-800">{teacher.username}</td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
-                            {isPasswordVisible ? teacher.password : '••••••••'}
-                          </span>
-                          <button
-                            onClick={() => togglePasswordVisibility(teacher.id)}
-                            className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
-                          >
-                            {isPasswordVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </td>
                       <td className="p-3.5 text-slate-600">
                         {teacher.email || teacher.telepon ? (
                           <div className="space-y-0.5 text-[11px]">
@@ -780,28 +659,11 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => onLoginAsTeacher(teacher)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
-                            title="Masuk sebagai guru"
-                          >
-                            <LogIn className="w-3 h-3" /> Masuk
-                          </button>
-                          <button
                             onClick={() => onSelectClassForReview(teacher.tingkatKelas, teacher.namaKelas)}
                             className="p-1.5 rounded-lg bg-blue-50 text-[#1E5BF9] hover:bg-blue-100 border border-blue-200 cursor-pointer"
                             title="Buka Rapor Kelas"
                           >
                             <BookOpen className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setPasswordModalTeacher(teacher);
-                              setNewQuickPassword('');
-                            }}
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 cursor-pointer"
-                            title="Reset Password"
-                          >
-                            <Key className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleOpenEditModal(teacher)}
@@ -908,12 +770,12 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                 </div>
               </div>
 
-              {/* Kredensial Login: Username & Password */}
+              {/* Username maps to a Firebase Authentication account provisioned by an administrator. */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5 text-xs">
                     <Key className="w-4 h-4 text-amber-500" />
-                    Kredensial Login Akun Guru
+                    Identitas Akun Guru
                   </span>
                   <button
                     type="button"
@@ -925,7 +787,7 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
                       Username Login <span className="text-rose-500">*</span>
@@ -942,31 +804,10 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
                     {formErrors.username && <span className="text-[11px] text-rose-600 font-bold">{formErrors.username}</span>}
                   </div>
 
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Password Login <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showFormPassword ? 'text' : 'password'}
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Contoh: guru4password#"
-                        className={`w-full p-2.5 pr-9 bg-white border rounded-xl font-mono focus:outline-none focus:ring-2 ${
-                          formErrors.password ? 'border-rose-500 focus:ring-rose-400' : 'border-slate-200 focus:ring-blue-500'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowFormPassword(!showFormPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
-                      >
-                        {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    {formErrors.password && <span className="text-[11px] text-rose-600 font-bold">{formErrors.password}</span>}
-                  </div>
                 </div>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Kata sandi akun tidak disimpan di database aplikasi. Buat akun login guru melalui Firebase Authentication, lalu daftarkan UID dan kelasnya pada profil akses.
+                </p>
               </div>
 
               {/* Data Tambahan: NIY, Email, Telepon, Peran */}
@@ -1050,77 +891,7 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({
         </div>
       )}
 
-      {/* 7. MODAL GANTI PASSWORD CEPAT */}
-      {passwordModalTeacher && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-            <div className="bg-[#0B1528] p-4 text-white flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-sm uppercase text-white">Reset Password Akun Guru</h3>
-              </div>
-              <button
-                onClick={() => setPasswordModalTeacher(null)}
-                className="text-slate-400 hover:text-white font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 text-xs">
-              <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-xl">
-                <div className="text-[11px] text-blue-800 font-bold">Guru:</div>
-                <div className="text-sm font-black text-slate-900">{passwordModalTeacher.nama}</div>
-                <div className="text-[11px] text-slate-600 mt-1">
-                  Kelas Binaan: <strong>{passwordModalTeacher.namaKelas}</strong> • Username: <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200">{passwordModalTeacher.username}</code>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Masukkan Password Baru
-                </label>
-                <div className="relative">
-                  <input
-                    type={showQuickPassword ? 'text' : 'password'}
-                    value={newQuickPassword}
-                    onChange={(e) => setNewQuickPassword(e.target.value)}
-                    placeholder="Masukkan password baru..."
-                    className="w-full p-2.5 pr-9 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowQuickPassword(!showQuickPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
-                  >
-                    {showQuickPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setPasswordModalTeacher(null)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveQuickPassword}
-                  disabled={isSyncing}
-                  className="px-4 py-2 rounded-xl bg-[#1E5BF9] hover:bg-blue-600 text-white font-bold shadow cursor-pointer disabled:opacity-50"
-                >
-                  Simpan Password
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 8. MODAL KONFIRMASI HAPUS GURU */}
+      {/* 7. MODAL KONFIRMASI HAPUS GURU */}
       {deleteModalTeacher && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 animate-fadeIn">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">

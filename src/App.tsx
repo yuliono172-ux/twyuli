@@ -34,6 +34,8 @@ import {
   Settings2,
   User,
   Lock,
+  Eye,
+  EyeOff,
   LogOut,
   Users,
   Shield,
@@ -88,18 +90,71 @@ import { AspectAssessmentSheet, ASPECT_CONFIGS, AspectId } from './components/As
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ExcelImportModal } from './components/ExcelImportModal';
 import { ClearDatabaseModal } from './components/ClearDatabaseModal';
-import { db, ref, set, onValue, off, remove, TeacherRecord, AppSettings } from './firebase';
+import {
+  auth,
+  db,
+  ref,
+  set,
+  get,
+  onValue,
+  off,
+  remove,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  TeacherRecord,
+  AppSettings
+} from './firebase';
 import { useToast } from './components/Toast';
 
 export interface UserAccount {
   role: 'admin' | 'guru' | 'orangtua';
   username: string;
   nama: string;
+  uid: string;
+  classKey?: string;
   kelas?: string;
   tingkatKelas?: string;
   nisn?: string;
   studentNo?: number;
+  studentKey?: string;
 }
+
+const isUserAccount = (value: unknown): value is UserAccount => {
+  if (!value || typeof value !== 'object') return false;
+
+  const user = value as Record<string, unknown>;
+  return (
+    (user.role === 'admin' || user.role === 'guru' || user.role === 'orangtua') &&
+    typeof user.uid === 'string' &&
+    typeof user.username === 'string' &&
+    typeof user.nama === 'string'
+  );
+};
+
+const classKeyFor = (className: string) =>
+  className
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const authEmailForUsername = (username: string) => {
+  const normalized = username.trim().toLowerCase();
+  return normalized.includes('@')
+    ? normalized
+    : `${normalized}@triwulan-a6d54.firebaseapp.com`;
+};
+
+const groupStudentsByClass = (students: StudentRecord[]) =>
+  students.reduce<Record<string, Record<string, StudentRecord>>>((groups, student) => {
+    const key = classKeyFor(student.kelas || '');
+    if (!key) return groups;
+    groups[key] ??= {};
+    groups[key][String(student.no)] = student;
+    return groups;
+  }, {});
 
 interface SiswaData {
   no: number;
@@ -1119,25 +1174,71 @@ export default function App() {
 
   const { success: toastSuccess, error: toastError, info: toastInfo } = useToast();
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setCurrentUser(null);
+        setMasterStudents([]);
+        localStorage.removeItem('rapor_master_multiquarter_v2');
+        setIsAuthReady(true);
+        return;
+      }
+
+      try {
+        const profileSnapshot = await get(ref(db, `user_access/${firebaseUser.uid}`));
+        const profile = profileSnapshot.val();
+        const account = profile && typeof profile === 'object'
+          ? {
+              ...profile,
+              uid: firebaseUser.uid,
+              username: profile.username || firebaseUser.email?.split('@')[0] || '',
+              nama: profile.nama || firebaseUser.displayName || 'Pengguna'
+            }
+          : null;
+
+        if (!isUserAccount(account)) {
+          throw new Error('Profil akses akun belum dibuat. Hubungi administrator sekolah.');
+        }
+
+        if (
+          (account.role === 'guru' && !account.classKey) ||
+          (account.role === 'orangtua' &&
+            (!account.classKey || account.studentNo === undefined || !account.studentKey || !account.nisn))
+        ) {
+          throw new Error('Profil akun belum terhubung ke kelas atau siswa yang benar.');
+        }
+
+        setAuthProfileError(null);
+        setMasterStudents([]);
+        localStorage.removeItem('rapor_master_multiquarter_v2');
+        setCurrentUser(account);
+      } catch (error: any) {
+        console.error('Gagal memuat profil akses Firebase:', error);
+        setCurrentUser(null);
+        setAuthProfileError(error?.message || 'Gagal memuat profil akun.');
+        await signOut(auth);
+      } finally {
+        setIsAuthReady(true);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   // Authentication & Role-based Access State
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
-    try {
-      const saved = localStorage.getItem('rapor_current_user');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn('Error reading saved user:', e);
-    }
-    return null;
-  });
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [authProfileError, setAuthProfileError] = useState<string | null>(null);
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
   const [firebaseConnected, setFirebaseConnected] = useState<boolean>(true);
 
   // Teachers State (stored at Firebase node /teachers)
   const [teachersList, setTeachersList] = useState<TeacherRecord[]>([]);
+  const [isTeachersLoaded, setIsTeachersLoaded] = useState(false);
   const [teacherFormData, setTeacherFormData] = useState<Omit<TeacherRecord, 'id'>>({
     nama: '',
     tingkatKelas: '4',
@@ -1149,27 +1250,7 @@ export default function App() {
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
 
   // Master Database Multi-Quarter (T1, T2, T3, T4)
-  const [masterStudents, setMasterStudents] = useState<StudentRecord[]>(() => {
-    try {
-      if (localStorage.getItem('rapor_db_cleared') === 'true') {
-        return [];
-      }
-      const saved = localStorage.getItem('rapor_master_multiquarter_v2');
-      if (saved) return JSON.parse(saved);
-    } catch (err) {
-      console.warn('LocalStorage error loading masterStudents:', err);
-    }
-    return INITIAL_MASTER_STUDENTS;
-  });
-
-  // Sinkronisasi otomatis ke LocalStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify(masterStudents));
-    } catch (err) {
-      console.warn('LocalStorage error saving masterStudents:', err);
-    }
-  }, [masterStudents]);
+  const [masterStudents, setMasterStudents] = useState<StudentRecord[]>([]);
 
   // Derived dataSiswa untuk Triwulan Aktif (digunakan di 9 form penilaian & DBTW)
   const dataSiswa: SiswaData[] = useMemo(() => {
@@ -1387,155 +1468,136 @@ export default function App() {
     }
   });
 
-  // 1. SINKRONISASI REALTIME FIREBASE: /students
+  // Load only the data scope granted to the authenticated account.
   useEffect(() => {
-    const studentsRef = ref(db, 'students');
+    if (!currentUser) {
+      setMasterStudents([]);
+      return;
+    }
+
+    let studentsPath = 'class_students';
+    if (currentUser.role === 'guru') {
+      if (!currentUser.classKey) {
+        setAuthProfileError('Profil guru belum memiliki kelas binaan. Hubungi administrator.');
+        setMasterStudents([]);
+        return;
+      }
+      studentsPath = `class_students/${currentUser.classKey}`;
+    } else if (currentUser.role === 'orangtua') {
+      if (!currentUser.classKey || !currentUser.studentKey || currentUser.studentNo === undefined) {
+        setAuthProfileError('Profil orang tua belum terhubung ke data siswa. Hubungi administrator.');
+        setMasterStudents([]);
+        return;
+      }
+      studentsPath = `class_students/${currentUser.classKey}/${currentUser.studentKey}`;
+    }
+
+    const studentsRef = ref(db, studentsPath);
     const unsubscribe = onValue(
       studentsRef,
       (snapshot: any) => {
         setFirebaseConnected(true);
-        if (snapshot.exists()) {
-          const val = snapshot.val();
-          if (val?._cleared) {
-            setMasterStudents([]);
-          } else if (Array.isArray(val)) {
-            const filtered = val.filter((s: any) => s && s.nama);
-            setMasterStudents(filtered);
-          } else if (typeof val === 'object' && val !== null) {
-            const arr = Object.values(val).filter((s: any) => s && s.nama) as StudentRecord[];
-            if (arr.length > 0) {
-              arr.sort((a, b) => a.no - b.no);
-              setMasterStudents(arr);
-            } else {
-              setMasterStudents([]);
-            }
-          }
-        } else {
-          // Inisialisasi awal ke Firebase jika masih kosong HANYA jika bukan sengaja dikosongkan
-          const wasCleared = localStorage.getItem('rapor_db_cleared') === 'true';
-          if (!wasCleared) {
-            set(studentsRef, INITIAL_MASTER_STUDENTS).catch((err: any) =>
-              console.warn('Firebase initial students set error:', err)
-            );
-          } else {
-            setMasterStudents([]);
-          }
+        const value = snapshot.val();
+        if (
+          currentUser.role === 'admin' &&
+          !snapshot.exists() &&
+          !localStorage.getItem('rapor_db_cleared')
+        ) {
+          get(ref(db, 'students'))
+            .then(async (legacySnapshot) => {
+              const legacyValue = legacySnapshot.val();
+              if (legacyValue?._cleared) {
+                localStorage.setItem('rapor_db_cleared', 'true');
+                setMasterStudents([]);
+                return;
+              }
+              const legacyStudents: StudentRecord[] = Array.isArray(legacyValue)
+                ? legacyValue.filter((student: any) => student && student.nama)
+                : legacySnapshot.exists() && legacyValue && typeof legacyValue === 'object'
+                ? Object.values(legacyValue).filter((student: any) => student && student.nama) as StudentRecord[]
+                : INITIAL_MASTER_STUDENTS;
+              const migrated = groupStudentsByClass(legacyStudents);
+              if (Object.keys(migrated).length > 0) {
+                await set(ref(db, 'class_students'), migrated);
+                localStorage.removeItem('rapor_db_cleared');
+              } else {
+                localStorage.setItem('rapor_db_cleared', 'true');
+                setMasterStudents([]);
+              }
+            })
+            .catch((error: any) => {
+              console.error('Gagal memigrasikan data siswa lama ke class_students:', error);
+              setFirebaseConnected(false);
+            });
+          return;
         }
+
+        const records: StudentRecord[] = Array.isArray(value)
+          ? value.filter((student: any) => student && student.nama)
+          : value && typeof value === 'object' && value.nama
+          ? [value as StudentRecord]
+          : value && typeof value === 'object'
+          ? Object.values(value).filter((student: any) => student && student.nama) as StudentRecord[]
+          : [];
+        records.sort((a, b) => a.no - b.no);
+        setMasterStudents(records);
       },
       (error: any) => {
-        console.warn('Firebase /students onValue error:', error);
+        console.error(`Firebase /${studentsPath} onValue error:`, error);
         setFirebaseConnected(false);
       }
     );
 
     return () => {
-      off(studentsRef);
+      off(studentsRef, 'value', unsubscribe);
     };
-  }, []);
+  }, [currentUser]);
 
-  // 2. SINKRONISASI REALTIME FIREBASE: /teachers
+  // Teacher credentials and profiles are not readable in teacher sessions.
   useEffect(() => {
+    if (currentUser?.role !== 'admin') {
+      setTeachersList([]);
+      setIsTeachersLoaded(false);
+      return;
+    }
+
     const teachersRef = ref(db, 'teachers');
     const unsubscribe = onValue(
       teachersRef,
       (snapshot: any) => {
         setFirebaseConnected(true);
+        setIsTeachersLoaded(true);
         if (snapshot.exists()) {
           const val = snapshot.val();
           const list: TeacherRecord[] = [];
           if (typeof val === 'object' && val !== null) {
             Object.keys(val).forEach((k) => {
-              list.push({ id: k, ...val[k] });
+              const teacher = val[k];
+              if (teacher && typeof teacher.username === 'string' && typeof teacher.nama === 'string') {
+                list.push({ id: k, ...teacher });
+              }
             });
           }
           setTeachersList(list);
         } else {
-          // Buat data guru default jika kosong (Tingkat 1 s.d. 6)
-          const defaultTeachers: Record<string, Omit<TeacherRecord, 'id'>> = {
-            teacher_4: {
-              nama: 'Yuliono Nurokhim, S.Pd',
-              tingkatKelas: '4',
-              namaKelas: 'Kelas IV (Fase B)',
-              username: 'guru4',
-              password: 'guru4password#',
-              niy: '89070107222028',
-              email: 'yuliono172@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas IV',
-              telepon: '081234567894'
-            },
-            teacher_1: {
-              nama: 'Siti Rahmah, S.Pd.I',
-              tingkatKelas: '1',
-              namaKelas: 'Kelas I (Fase A)',
-              username: 'guru1',
-              password: 'guru1password#',
-              niy: '89070107222021',
-              email: 'siti.rahmah@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas I',
-              telepon: '081234567891'
-            },
-            teacher_2: {
-              nama: 'Ahmad Fauzi, S.Pd',
-              tingkatKelas: '2',
-              namaKelas: 'Kelas II (Fase A)',
-              username: 'guru2',
-              password: 'guru2password#',
-              niy: '89070107222022',
-              email: 'ahmad.fauzi@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas II',
-              telepon: '081234567892'
-            },
-            teacher_3: {
-              nama: 'Dewi Lestari, S.Pd',
-              tingkatKelas: '3',
-              namaKelas: 'Kelas III (Fase B)',
-              username: 'guru3',
-              password: 'guru3password#',
-              niy: '89070107222023',
-              email: 'dewi.lestari@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas III',
-              telepon: '081234567893'
-            },
-            teacher_5: {
-              nama: 'Bambang Pratama, M.Pd',
-              tingkatKelas: '5',
-              namaKelas: 'Kelas V (Fase C)',
-              username: 'guru5',
-              password: 'guru5password#',
-              niy: '89070107222025',
-              email: 'bambang.pratama@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas V',
-              telepon: '081234567895'
-            },
-            teacher_6: {
-              nama: 'Nurul Hidayah, S.Pd',
-              tingkatKelas: '6',
-              namaKelas: 'Kelas VI (Fase C)',
-              username: 'guru6',
-              password: 'guru6password#',
-              niy: '89070107222026',
-              email: 'nurul.hidayah@guru.sd.belajar.id',
-              mataPelajaran: 'Wali Kelas VI',
-              telepon: '081234567896'
-            }
-          };
-          set(teachersRef, defaultTeachers).catch((err: any) =>
-            console.warn('Firebase initial teachers error:', err)
-          );
+          setTeachersList([]);
         }
       },
       (error: any) => {
-        console.warn('Firebase /teachers onValue error:', error);
+        console.error('Firebase /teachers onValue error:', error);
+        setIsTeachersLoaded(false);
+        setFirebaseConnected(false);
       }
     );
 
     return () => {
-      off(teachersRef);
+      off(teachersRef, 'value', unsubscribe);
     };
-  }, []);
+  }, [currentUser]);
 
   // 3. SINKRONISASI REALTIME FIREBASE: /app_settings
   useEffect(() => {
+    if (!currentUser) return;
     const settingsRef = ref(db, 'app_settings');
     const unsubscribe = onValue(
       settingsRef,
@@ -1589,21 +1651,8 @@ export default function App() {
     );
 
     return () => {
-      off(settingsRef);
+      off(settingsRef, 'value', unsubscribe);
     };
-  }, []);
-
-  // Simpan user sesi ke localStorage
-  useEffect(() => {
-    try {
-      if (currentUser) {
-        localStorage.setItem('rapor_current_user', JSON.stringify(currentUser));
-      } else {
-        localStorage.removeItem('rapor_current_user');
-      }
-    } catch (e) {
-      console.warn('Error saving user session:', e);
-    }
   }, [currentUser]);
 
   // Otomatis kunci dropdown siswa jika user adalah orang tua
@@ -1617,21 +1666,45 @@ export default function App() {
   const saveStudentsToFirebase = async (newStudents: StudentRecord[], customMsg?: string) => {
     setIsFirebaseSyncing(true);
     try {
-      const studentsRef = ref(db, 'students');
-      if (newStudents.length === 0) {
-        localStorage.setItem('rapor_db_cleared', 'true');
-        localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify([]));
-        await set(studentsRef, { _cleared: true, timestamp: Date.now() });
-        setMasterStudents([]);
-        setSelectedStudentNum(1);
-      } else {
-        localStorage.removeItem('rapor_db_cleared');
-        localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify(newStudents));
-        await set(studentsRef, newStudents);
-        setMasterStudents(newStudents);
-        if (selectedStudentNum > newStudents.length || !newStudents.some((s) => s.no === selectedStudentNum)) {
-          setSelectedStudentNum(newStudents[0]?.no || 1);
+      if (!currentUser || currentUser.role === 'orangtua') {
+        throw new Error('Akun ini tidak memiliki izin untuk menyimpan data siswa.');
+      }
+
+      const studentsRef = currentUser.role === 'admin'
+        ? ref(db, 'class_students')
+        : currentUser.classKey
+        ? ref(db, `class_students/${currentUser.classKey}`)
+        : null;
+      if (!studentsRef) {
+        throw new Error('Profil guru tidak memiliki kelas binaan yang valid.');
+      }
+
+      const scopedStudents = currentUser.role === 'admin'
+        ? newStudents
+        : newStudents.filter((student) => classKeyFor(student.kelas || '') === currentUser.classKey);
+
+      if (currentUser.role === 'admin') {
+        const groupedStudents = groupStudentsByClass(scopedStudents);
+        if (Object.keys(groupedStudents).length === 0) {
+          await set(studentsRef, null);
+          await set(ref(db, 'students'), { _cleared: true, timestamp: Date.now() });
+          localStorage.setItem('rapor_db_cleared', 'true');
+        } else {
+          await set(studentsRef, groupedStudents);
+          await set(ref(db, 'students'), null);
+          localStorage.removeItem('rapor_db_cleared');
         }
+      } else {
+        const classStudents = scopedStudents.reduce<Record<string, StudentRecord>>((records, student) => {
+          records[String(student.no)] = student;
+          return records;
+        }, {});
+        await set(studentsRef, Object.keys(classStudents).length > 0 ? classStudents : null);
+      }
+
+      setMasterStudents(scopedStudents);
+      if (selectedStudentNum > scopedStudents.length || !scopedStudents.some((student) => student.no === selectedStudentNum)) {
+        setSelectedStudentNum(scopedStudents[0]?.no || 1);
       }
       toastSuccess(
         'Data Siswa Berhasil Disimpan',
@@ -1696,7 +1769,9 @@ export default function App() {
     try {
       const teacherId = editingTeacherId || `teacher_${Date.now()}`;
       const teacherRef = ref(db, `teachers/${teacherId}`);
-      await set(teacherRef, teacherFormData);
+      const teacherProfile = { ...teacherFormData };
+      delete teacherProfile.password;
+      await set(teacherRef, teacherProfile);
 
       toastSuccess(
         editingTeacherId ? 'Data Guru Berhasil Diperbarui' : 'Data Guru Berhasil Ditambahkan',
@@ -1769,86 +1844,52 @@ export default function App() {
     }
   };
 
-  // FUNGSI LOGIN DENGAN DETEKSI ROLE OTOMATIS
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Firebase Auth validates the credentials; the trusted user_access record defines the role.
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
-    setIsLoggingIn(true);
 
     const inputUser = loginForm.username.trim();
-    const inputPass = loginForm.password.trim();
+    const inputPass = loginForm.password;
 
     if (!inputUser || !inputPass) {
       setLoginError('Silakan masukkan username dan password!');
-      setIsLoggingIn(false);
       return;
     }
 
-    // 1. Cek Admin
-    if (inputUser === 'admin333221' && inputPass === 'admin333221#') {
-      const adminUser: UserAccount = {
-        role: 'admin',
-        username: 'admin333221',
-        nama: 'Administrator Sekolah'
-      };
-      setCurrentUser(adminUser);
-      setIsLoggingIn(false);
+    setIsLoggingIn(true);
+    try {
+      await signInWithEmailAndPassword(auth, authEmailForUsername(inputUser), inputPass);
       setLoginForm({ username: '', password: '' });
-      toastSuccess('Login Berhasil', 'Selamat datang kembali, Administrator Sekolah!');
-      return;
-    }
-
-    // 2. Cek Guru dari realtime list teachers
-    const matchedTeacher = teachersList.find(
-      (t) => t.username.toLowerCase() === inputUser.toLowerCase() && t.password === inputPass
-    );
-    if (matchedTeacher) {
-      const guruUser: UserAccount = {
-        role: 'guru',
-        username: matchedTeacher.username,
-        nama: matchedTeacher.nama,
-        kelas: matchedTeacher.namaKelas,
-        tingkatKelas: matchedTeacher.tingkatKelas
-      };
-      setCurrentUser(guruUser);
+      toastSuccess('Login Berhasil', 'Memuat profil dan hak akses akun Anda.');
+    } catch (error: any) {
+      console.error('Firebase Authentication login error:', error);
+      if (error?.code === 'auth/network-request-failed') {
+        setLoginError('Tidak dapat terhubung ke layanan login. Periksa koneksi internet.');
+      } else if (
+        error?.code === 'auth/invalid-credential' ||
+        error?.code === 'auth/user-not-found' ||
+        error?.code === 'auth/wrong-password' ||
+        error?.code === 'auth/invalid-email'
+      ) {
+        setLoginError('Username atau password tidak cocok. Periksa kembali kredensial Anda.');
+      } else {
+        setLoginError(error?.message || 'Login gagal. Silakan coba kembali.');
+      }
+    } finally {
       setIsLoggingIn(false);
-      setLoginForm({ username: '', password: '' });
-      toastSuccess('Login Berhasil', `Selamat datang, Ibu/Bapak ${matchedTeacher.nama} (${matchedTeacher.namaKelas})!`);
-      return;
     }
-
-    // 3. Cek Orang Tua (NISN / NIS Siswa)
-    const matchedStudent = masterStudents.find(
-      (s) => s.nis.trim() === inputUser && s.nis.trim() === inputPass
-    );
-    if (matchedStudent) {
-      const parentUser: UserAccount = {
-        role: 'orangtua',
-        username: matchedStudent.nis,
-        nama: `Orang Tua dari ${matchedStudent.nama}`,
-        nisn: matchedStudent.nis,
-        studentNo: matchedStudent.no,
-        kelas: matchedStudent.kelas
-      };
-      setCurrentUser(parentUser);
-      setSelectedStudentNum(matchedStudent.no);
-      setIsLoggingIn(false);
-      setLoginForm({ username: '', password: '' });
-      toastSuccess(
-        'Login Berhasil (Akses Orang Tua)',
-        `Selamat datang! Membuka data rapor ananda ${matchedStudent.nama}. Mode Read-Only aktif.`
-      );
-      return;
-    }
-
-    setIsLoggingIn(false);
-    setLoginError('Username atau Password tidak cocok! Periksa kembali kredensial Anda.');
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setCurrentPage('home');
-    toastInfo('Logout Berhasil', 'Anda telah keluar dari aplikasi Rapor Siswa.');
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentPage('home');
+      toastInfo('Logout Berhasil', 'Anda telah keluar dari aplikasi Rapor Siswa.');
+    } catch (error: any) {
+      console.error('Firebase Authentication logout error:', error);
+      toastError('Logout Gagal', error?.message || 'Tidak dapat mengakhiri sesi akun.');
+    }
   };
 
   const [printStatus, setPrintStatus] = useState<string | null>(null);
@@ -3121,6 +3162,157 @@ export default function App() {
     setPrintStatus('File Spider Chart Rapor berhasil diunduh!');
     setTimeout(() => setPrintStatus(null), 5000);
   };
+
+  if (!isAuthReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#070D1A] text-sm font-medium text-slate-300">
+        Memeriksa sesi login...
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#070D1A] px-4 py-10 text-slate-100">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-36 -top-40 h-96 w-96 rounded-full bg-blue-600/20 blur-3xl" />
+          <div className="absolute -bottom-40 -right-32 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(148,163,184,0.12)_1px,transparent_1px)] [background-size:24px_24px]" />
+        </div>
+
+        <main className="relative z-10 w-full max-w-md">
+          <div className="mb-7 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-400/40 bg-gradient-to-br from-blue-500 to-indigo-700 shadow-lg shadow-blue-950/50">
+              <School className="h-8 w-8 text-white" aria-hidden="true" />
+            </div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">E-Rapor Digital</p>
+            <h1 className="mt-2 text-xl font-extrabold leading-snug text-white sm:text-2xl">
+              {metaRapor.kopSekolah.namaSekolah}
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">Masuk untuk melanjutkan ke aplikasi rapor siswa</p>
+          </div>
+
+          <form
+            onSubmit={handleLoginSubmit}
+            className="rounded-2xl border border-slate-700/80 bg-slate-900/90 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          >
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">Masuk ke akun Anda</h2>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  Sistem mengenali akses admin, guru, atau orang tua secara otomatis.
+                </p>
+              </div>
+              <span
+                className={`mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                  firebaseConnected
+                    ? 'border-emerald-700/70 bg-emerald-950/60 text-emerald-300'
+                    : 'border-rose-700/70 bg-rose-950/60 text-rose-300'
+                }`}
+                role="status"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${firebaseConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                {firebaseConnected ? 'Database aktif' : 'Koneksi terputus'}
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="login-username" className="mb-1.5 block text-xs font-semibold text-slate-300">
+                  Username / NIS siswa
+                </label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                  <input
+                    id="login-username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    required
+                    value={loginForm.username}
+                    onChange={(event) => {
+                      setLoginForm({ ...loginForm, username: event.target.value });
+                      if (loginError) setLoginError(null);
+                    }}
+                    placeholder="Masukkan username atau NIS"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="login-password" className="mb-1.5 block text-xs font-semibold text-slate-300">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                  <input
+                    id="login-password"
+                    name="password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    required
+                    value={loginForm.password}
+                    onChange={(event) => {
+                      setLoginForm({ ...loginForm, password: event.target.value });
+                      if (loginError) setLoginError(null);
+                    }}
+                    placeholder="Masukkan password"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-10 pr-12 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((visible) => !visible)}
+                    aria-label={showLoginPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    aria-pressed={showLoginPassword}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {loginError && (
+              <p
+                id="login-error"
+                role="alert"
+                className="mt-4 rounded-xl border border-rose-800/80 bg-rose-950/50 px-3 py-2.5 text-sm text-rose-200"
+              >
+                {loginError}
+              </p>
+            )}
+
+            {authProfileError && (
+              <p className="mt-3 text-xs text-rose-300" role="status">
+                {authProfileError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-950/40 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+            >
+              <LogOut className="h-4 w-4 rotate-180" aria-hidden="true" />
+              {isLoggingIn ? 'Memeriksa akun...' : 'Masuk'}
+            </button>
+
+            <div className="mt-5 border-t border-slate-800 pt-4 text-xs leading-relaxed text-slate-400">
+              <p>Akun dan hak akses dibuat oleh administrator melalui Firebase.</p>
+              <p className="mt-1.5">Orang tua memakai username NIS dan password akun Firebase yang telah diberikan.</p>
+            </div>
+          </form>
+
+          <p className="mt-5 text-center text-[11px] text-slate-500">
+            Akses hanya untuk warga sekolah yang memiliki akun.
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#070D1A] text-slate-900 font-sans flex flex-col items-center justify-start p-1 sm:p-4">
@@ -7534,7 +7726,9 @@ export default function App() {
                 try {
                   const teacherId = id || `teacher_${Date.now()}`;
                   const teacherRef = ref(db, `teachers/${teacherId}`);
-                  await set(teacherRef, data);
+                              const teacherProfile = { ...data };
+                              delete teacherProfile.password;
+                              await set(teacherRef, teacherProfile);
                   toastSuccess(
                     id ? 'Data Guru Diperbarui' : 'Guru Baru Ditambahkan',
                     `Akun guru "${data.nama}" untuk ${data.namaKelas} berhasil disimpan ke Firebase node /teachers.`
@@ -7556,21 +7750,6 @@ export default function App() {
                 } finally {
                   setIsFirebaseSyncing(false);
                 }
-              }}
-              onLoginAsTeacher={(teacher) => {
-                const guruUser: UserAccount = {
-                  role: 'guru',
-                  username: teacher.username,
-                  nama: teacher.nama,
-                  kelas: teacher.namaKelas,
-                  tingkatKelas: teacher.tingkatKelas
-                };
-                setCurrentUser(guruUser);
-                setSelectedClassFilter(teacher.tingkatKelas);
-                toastSuccess(
-                  'Login Guru Berhasil',
-                  `Sekarang aktif sebagai ${teacher.nama}. Akses rapor terisolasi aman untuk ${teacher.namaKelas}.`
-                );
               }}
               onSelectClassForReview={(tingkatKelas, namaKelas) => {
                 setSelectedClassFilter(tingkatKelas);

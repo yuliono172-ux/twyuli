@@ -9,6 +9,12 @@ import {
   update,
   remove
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyDNGOS06tQ_63_UAHQSJj0uBxpIKWBbnZI",
@@ -24,8 +30,10 @@ export const firebaseConfig = {
 // Initialize Firebase App
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const db = getDatabase(app);
+export const auth = getAuth(app);
 
 export { ref, set, get, onValue, off, update, remove };
+export { onAuthStateChanged, signInWithEmailAndPassword, signOut };
 
 export interface TeacherRecord {
   id: string;
@@ -33,7 +41,7 @@ export interface TeacherRecord {
   tingkatKelas: string; // '1' | '2' | '3' | '4' | '5' | '6'
   namaKelas: string; // e.g. 'Kelas IV (Fase B)' or 'Kelas 4'
   username: string;
-  password: string;
+  password?: string;
   niy?: string;
   email?: string;
   telepon?: string;

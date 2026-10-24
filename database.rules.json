@@ -1,0 +1,36 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "user_access": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('user_access').child(auth.uid).child('role').val() === 'admin')",
+        ".write": false
+      }
+    },
+    "class_students": {
+      ".read": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'",
+      "$classKey": {
+        ".read": "auth != null && (root.child('user_access').child(auth.uid).child('role').val() === 'admin' || (root.child('user_access').child(auth.uid).child('role').val() === 'guru' && root.child('user_access').child(auth.uid).child('classKey').val() === $classKey))",
+        ".write": "auth != null && (root.child('user_access').child(auth.uid).child('role').val() === 'admin' || (root.child('user_access').child(auth.uid).child('role').val() === 'guru' && root.child('user_access').child(auth.uid).child('classKey').val() === $classKey))",
+        "$studentKey": {
+          ".read": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'orangtua' && root.child('user_access').child(auth.uid).child('classKey').val() === $classKey && root.child('user_access').child(auth.uid).child('studentNo').val() === $studentKey",
+          ".write": false
+        }
+      }
+    },
+    "teachers": {
+      ".read": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "students": {
+      ".read": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "app_settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('user_access').child(auth.uid).child('role').val() === 'admin'"
+    }
+  }
+}
