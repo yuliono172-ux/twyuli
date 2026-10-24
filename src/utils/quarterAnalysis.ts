@@ -55,8 +55,10 @@ export const getStudentSpiderAnalysis = (
   let hasAnyData = false;
   let validAspectCount = 0;
 
+  const safeAssessment = assessment || {};
+
   const aspects: AspectAnalysis[] = ASPEK_LIST.map((asp) => {
-    const sec = (assessment[asp.id as keyof SiswaAssessmentRecord] as Record<string, string>) || {};
+    const sec = ((safeAssessment as any)[asp.id] as Record<string, string>) || {};
     const filledIndicators = asp.indikatorList.map((ind) => {
       const rating = sec[ind.key] || '';
       const score = GRADE_WEIGHTS[rating] || 0;
@@ -168,11 +170,13 @@ export const compareTwoQuarters = (
   const periodeA = TRIWULAN_OPTIONS.find((t) => t.id === quarterAId) || TRIWULAN_OPTIONS[0];
   const periodeB = TRIWULAN_OPTIONS.find((t) => t.id === quarterBId) || TRIWULAN_OPTIONS[1];
 
-  const dataA = student.triwulan[quarterAId] || {};
-  const dataB = student.triwulan[quarterBId] || {};
+  const sTriwulan = student?.triwulan || ({} as any);
+  const studentName = student?.nama || 'Siswa';
+  const dataA = sTriwulan[quarterAId] || {};
+  const dataB = sTriwulan[quarterBId] || {};
 
-  const analysisA = getStudentSpiderAnalysis(dataA, student.nama);
-  const analysisB = getStudentSpiderAnalysis(dataB, student.nama);
+  const analysisA = getStudentSpiderAnalysis(dataA, studentName);
+  const analysisB = getStudentSpiderAnalysis(dataB, studentName);
 
   let naikCount = 0;
   let stagnanCount = 0;
@@ -332,10 +336,12 @@ export const getAllQuartersComparison = (student: StudentRecord): {
     [key: string]: any;
   }[];
 } => {
-  const analysisT1 = getStudentSpiderAnalysis(student.triwulan.T1, student.nama);
-  const analysisT2 = getStudentSpiderAnalysis(student.triwulan.T2, student.nama);
-  const analysisT3 = getStudentSpiderAnalysis(student.triwulan.T3, student.nama);
-  const analysisT4 = getStudentSpiderAnalysis(student.triwulan.T4, student.nama);
+  const sTriwulan = student?.triwulan || ({} as any);
+  const studentName = student?.nama || 'Siswa';
+  const analysisT1 = getStudentSpiderAnalysis(sTriwulan.T1, studentName);
+  const analysisT2 = getStudentSpiderAnalysis(sTriwulan.T2, studentName);
+  const analysisT3 = getStudentSpiderAnalysis(sTriwulan.T3, studentName);
+  const analysisT4 = getStudentSpiderAnalysis(sTriwulan.T4, studentName);
 
   const aspects: AllQuartersAspectRow[] = ASPEK_LIST.map((asp) => {
     const asp1 = analysisT1.aspects.find((a) => a.id === asp.id);

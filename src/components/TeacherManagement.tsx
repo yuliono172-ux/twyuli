@@ -58,9 +58,9 @@ const TINGKAT_KELAS_OPTIONS = [
 ];
 
 export const TeacherManagement: React.FC<TeacherManagementProps> = ({
-  teachers,
+  teachers = [],
   currentUser,
-  students,
+  students = [],
   onSaveTeacher,
   onDeleteTeacher,
   onLoginAsTeacher,

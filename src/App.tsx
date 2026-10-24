@@ -39,7 +39,12 @@ import {
   Shield,
   Save,
   Cloud,
-  CloudOff
+  CloudOff,
+  Calendar,
+  School,
+  Trash2,
+  FileSpreadsheet,
+  RefreshCw
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -80,6 +85,9 @@ import { PerbandinganTriwulan } from './components/PerbandinganTriwulan';
 import { TeacherManagement } from './components/TeacherManagement';
 import { ModernAdminDashboard } from './components/ModernAdminDashboard';
 import { AspectAssessmentSheet, ASPECT_CONFIGS, AspectId } from './components/AspectAssessmentSheet';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ExcelImportModal } from './components/ExcelImportModal';
+import { ClearDatabaseModal } from './components/ClearDatabaseModal';
 import { db, ref, set, onValue, off, remove, TeacherRecord, AppSettings } from './firebase';
 import { useToast } from './components/Toast';
 
@@ -1050,6 +1058,8 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentNum, setSelectedStudentNum] = useState<number>(1);
   const [printViewMode, setPrintViewMode] = useState<'ringkas' | 'detail'>('detail');
+  const [showClearDbModal, setShowClearDbModal] = useState<boolean>(false);
+  const [showExcelImportModal, setShowExcelImportModal] = useState<boolean>(false);
 
   // Sinkronisasi Route URL: /teachers
   useEffect(() => {
@@ -1141,6 +1151,9 @@ export default function App() {
   // Master Database Multi-Quarter (T1, T2, T3, T4)
   const [masterStudents, setMasterStudents] = useState<StudentRecord[]>(() => {
     try {
+      if (localStorage.getItem('rapor_db_cleared') === 'true') {
+        return [];
+      }
       const saved = localStorage.getItem('rapor_master_multiquarter_v2');
       if (saved) return JSON.parse(saved);
     } catch (err) {
@@ -1383,20 +1396,30 @@ export default function App() {
         setFirebaseConnected(true);
         if (snapshot.exists()) {
           const val = snapshot.val();
-          if (Array.isArray(val) && val.length > 0) {
-            setMasterStudents(val);
+          if (val?._cleared) {
+            setMasterStudents([]);
+          } else if (Array.isArray(val)) {
+            const filtered = val.filter((s: any) => s && s.nama);
+            setMasterStudents(filtered);
           } else if (typeof val === 'object' && val !== null) {
-            const arr = Object.values(val) as StudentRecord[];
+            const arr = Object.values(val).filter((s: any) => s && s.nama) as StudentRecord[];
             if (arr.length > 0) {
               arr.sort((a, b) => a.no - b.no);
               setMasterStudents(arr);
+            } else {
+              setMasterStudents([]);
             }
           }
         } else {
-          // Inisialisasi awal ke Firebase jika masih kosong
-          set(studentsRef, INITIAL_MASTER_STUDENTS).catch((err: any) =>
-            console.warn('Firebase initial students set error:', err)
-          );
+          // Inisialisasi awal ke Firebase jika masih kosong HANYA jika bukan sengaja dikosongkan
+          const wasCleared = localStorage.getItem('rapor_db_cleared') === 'true';
+          if (!wasCleared) {
+            set(studentsRef, INITIAL_MASTER_STUDENTS).catch((err: any) =>
+              console.warn('Firebase initial students set error:', err)
+            );
+          } else {
+            setMasterStudents([]);
+          }
         }
       },
       (error: any) => {
@@ -1595,8 +1618,21 @@ export default function App() {
     setIsFirebaseSyncing(true);
     try {
       const studentsRef = ref(db, 'students');
-      await set(studentsRef, newStudents);
-      setMasterStudents(newStudents);
+      if (newStudents.length === 0) {
+        localStorage.setItem('rapor_db_cleared', 'true');
+        localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify([]));
+        await set(studentsRef, { _cleared: true, timestamp: Date.now() });
+        setMasterStudents([]);
+        setSelectedStudentNum(1);
+      } else {
+        localStorage.removeItem('rapor_db_cleared');
+        localStorage.setItem('rapor_master_multiquarter_v2', JSON.stringify(newStudents));
+        await set(studentsRef, newStudents);
+        setMasterStudents(newStudents);
+        if (selectedStudentNum > newStudents.length || !newStudents.some((s) => s.no === selectedStudentNum)) {
+          setSelectedStudentNum(newStudents[0]?.no || 1);
+        }
+      }
       toastSuccess(
         'Data Siswa Berhasil Disimpan',
         customMsg || 'Data penilaian siswa berhasil diperbarui ke Firebase Realtime Database.'
@@ -1606,6 +1642,45 @@ export default function App() {
       toastError('Gagal Menyimpan Data Siswa', err?.message || 'Terjadi kesalahan jaringan Firebase.');
     } finally {
       setIsFirebaseSyncing(false);
+    }
+  };
+
+  // Helper Pengosongan Database Sekali Klik
+  const handleClearDatabase = async () => {
+    await saveStudentsToFirebase([], 'Database siswa berhasil dikosongkan. Seluruh data peserta didik telah dibersihkan.');
+    setSelectedStudentNum(1);
+  };
+
+  // Helper Pemulihan 10 Siswa Contoh Bawaan
+  const handleRestoreSampleStudents = async () => {
+    localStorage.removeItem('rapor_db_cleared');
+    await saveStudentsToFirebase(INITIAL_MASTER_STUDENTS, 'Database siswa berhasil dikembalikan ke 10 siswa sampel bawaan.');
+    setSelectedStudentNum(1);
+  };
+
+  // Helper Impor Siswa dari Excel (Replace atau Append)
+  const handleImportExcelStudents = async (importedStudents: StudentRecord[], mode: 'replace' | 'append') => {
+    let finalStudents: StudentRecord[] = [];
+    if (mode === 'append') {
+      const startNo = masterStudents.length;
+      const renumbered = importedStudents.map((s, idx) => ({
+        ...s,
+        no: startNo + idx + 1
+      }));
+      finalStudents = [...masterStudents, ...renumbered];
+    } else {
+      finalStudents = importedStudents.map((s, idx) => ({
+        ...s,
+        no: idx + 1
+      }));
+    }
+
+    await saveStudentsToFirebase(
+      finalStudents,
+      `Berhasil mengimpor ${importedStudents.length} siswa dari Excel! Data telah tersinkronkan ke seluruh sheet & rapor.`
+    );
+    if (finalStudents.length > 0) {
+      setSelectedStudentNum(finalStudents[0].no);
     }
   };
 
@@ -1921,22 +1996,39 @@ export default function App() {
       s.nis.includes(searchTerm)
   );
 
+  const fallbackMasterStudent: StudentRecord = useMemo(
+    () => ({
+      no: 1,
+      nama: 'Belum Ada Siswa',
+      nis: '000000',
+      kelas: 'Kelas IV',
+      tahunAjaran: '2026/2027',
+      triwulan: {
+        T1: createEmptyAssessmentRecord(),
+        T2: createEmptyAssessmentRecord(),
+        T3: createEmptyAssessmentRecord(),
+        T4: createEmptyAssessmentRecord()
+      }
+    }),
+    []
+  );
+
   const fallbackSiswaItem: SiswaData = useMemo(() => {
-    const s = masterStudents[0];
+    const s = masterStudents[0] || fallbackMasterStudent;
     return {
-      no: s?.no || 1,
-      nama: s?.nama || 'Siswa Kelas',
-      nis: s?.nis || '000000',
-      kelas: s?.kelas || 'Kelas IV',
-      tahunAjaran: s?.tahunAjaran || '2026/2027',
-      ...(s?.triwulan?.[activeTriwulan] || createEmptyAssessmentRecord()),
-      allTriwulan: s?.triwulan
+      no: s.no || 1,
+      nama: s.nama || 'Siswa Kelas',
+      nis: s.nis || '000000',
+      kelas: s.kelas || 'Kelas IV',
+      tahunAjaran: s.tahunAjaran || '2026/2027',
+      ...(s.triwulan?.[activeTriwulan] || createEmptyAssessmentRecord()),
+      allTriwulan: s.triwulan
     };
-  }, [masterStudents, activeTriwulan]);
+  }, [masterStudents, activeTriwulan, fallbackMasterStudent]);
 
   const selectedStudent = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0] || fallbackSiswaItem;
   const selectedReportStudent = reportSiswa.find((s) => s.no === selectedStudentNum) || reportSiswa[0] || selectedStudent;
-  const selectedMasterStudent = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0];
+  const selectedMasterStudent = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0] || fallbackMasterStudent;
 
   // Komponen Banner Identitas Periode Aktif (Requirement 4)
   const renderPeriodeBanner = (aspekLabel?: string) => {
@@ -3547,12 +3639,13 @@ export default function App() {
           {/* 3. AREA KONTEN MASING-MASING HALAMAN                      */}
           {/* ========================================================= */}
           <main className="p-3 sm:p-5 flex-1 min-w-0 overflow-y-auto bg-[#F4F7FB]">
+            <ErrorBoundary onReset={() => setCurrentPage('home')}>
           {/* ======================================================= */}
           {/* TAB 0: HOME / DASHBOARD TRIWULAN AKTIF                  */}
           {/* ======================================================= */}
           {currentPage === 'home' && (() => {
-            const currentStudentMaster = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0];
-            const currentStudentData = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0];
+            const currentStudentMaster = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0] || fallbackMasterStudent;
+            const currentStudentData = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0] || fallbackSiswaItem;
             const activeTriwulanLabel = TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan;
 
             // Logika Periode Pembanding (Triwulan Sebelumnya)
@@ -3791,34 +3884,21 @@ export default function App() {
                       + Tambah Siswa
                     </button>
                     <button
-                      onClick={() => {
-                        const raw = prompt('Tempel daftar nama siswa dari Excel (Format: NIS [tab] Nama atau cukup Nama per baris):');
-                        if (raw?.trim()) {
-                          const lines = raw.trim().split('\n');
-                          const parsed: StudentRecord[] = lines.map((line, idx) => {
-                            const parts = line.includes('\t') ? line.split('\t') : line.split(',');
-                            const nis = parts[0]?.trim() || `2023400${String(idx + 1).padStart(2, '0')}`;
-                            const nama = parts[1]?.trim() || parts[0]?.trim() || `Siswa ${idx + 1}`;
-                            return {
-                              no: idx + 1,
-                              nama: nama.toUpperCase(),
-                              nis,
-                              kelas: 'IV (Empat)',
-                              tahunAjaran: '2026/2027',
-                              triwulan: {
-                                T1: createEmptyAssessmentRecord(),
-                                T2: createEmptyAssessmentRecord(),
-                                T3: createEmptyAssessmentRecord(),
-                                T4: createEmptyAssessmentRecord()
-                              }
-                            };
-                          });
-                          saveStudentsToFirebase(parsed, `Berhasil mengimpor ${parsed.length} siswa ke Firebase Realtime Database!`);
-                        }
-                      }}
-                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      onClick={() => setShowExcelImportModal(true)}
+                      className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      title="Unggah file .xlsx / .csv atau paste tabel dari Excel"
                     >
-                      Paste dari Excel
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Upload / Paste dari Excel</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowClearDbModal(true)}
+                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      title="Kosongkan database siswa dalam sekali klik"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Kosongkan Database</span>
                     </button>
 
                     <button
@@ -3854,97 +3934,154 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {dataSiswa.map((s) => (
-                        <tr key={s.no} className="hover:bg-blue-50/30 transition">
-                          {/* NO */}
-                          <td className="p-2.5 text-center font-bold border-r border-slate-100 text-slate-400 font-mono">
-                            {s.no}
+                      {dataSiswa.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center bg-slate-50/50">
+                            <div className="max-w-md mx-auto space-y-3">
+                              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#1E5BF9] flex items-center justify-center mx-auto border border-blue-200">
+                                <Database className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+                                  Database Siswa Masih Kosong
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Belum ada data peserta didik yang tersimpan. Anda dapat mengimpor dari file Excel, menambahkan siswa secara manual, atau memulihkan data contoh.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                <button
+                                  onClick={() => setShowExcelImportModal(true)}
+                                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                                >
+                                  <FileSpreadsheet className="w-4 h-4" />
+                                  <span>Upload / Paste Excel</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const nextNo = 1;
+                                    const defaultKelas = currentUser?.kelas || (selectedClassFilter !== 'all' ? `Kelas ${selectedClassFilter}` : 'Kelas IV (Fase B)');
+                                    const newS: StudentRecord = {
+                                      no: nextNo,
+                                      nama: 'NAMA SISWA BARU 1',
+                                      nis: '202340001',
+                                      kelas: defaultKelas,
+                                      tahunAjaran: '2026/2027',
+                                      triwulan: {
+                                        T1: createEmptyAssessmentRecord(),
+                                        T2: createEmptyAssessmentRecord(),
+                                        T3: createEmptyAssessmentRecord(),
+                                        T4: createEmptyAssessmentRecord()
+                                      }
+                                    };
+                                    saveStudentsToFirebase([newS], 'Siswa pertama berhasil ditambahkan!');
+                                  }}
+                                  className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-[#1E5BF9] border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                                >
+                                  + Tambah Manual
+                                </button>
+                                <button
+                                  onClick={handleRestoreSampleStudents}
+                                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Pulihkan 10 Siswa Contoh</span>
+                                </button>
+                              </div>
+                            </div>
                           </td>
+                        </tr>
+                      ) : (
+                        dataSiswa.map((s) => (
+                          <tr key={s.no} className="hover:bg-blue-50/30 transition">
+                            {/* NO */}
+                            <td className="p-2.5 text-center font-bold border-r border-slate-100 text-slate-400 font-mono">
+                              {s.no}
+                            </td>
 
-                          {/* NAMA (EDITABLE) */}
-                          <td className="p-1.5 border-r border-slate-100">
-                            <input
-                              type="text"
-                              value={s.nama}
-                              readOnly={currentUser?.role === 'orangtua'}
-                              onChange={(e) => {
-                                const val = e.target.value.toUpperCase();
-                                setMasterStudents((prev: StudentRecord[]) =>
-                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nama: val } : item))
-                                );
-                              }}
-                              className={`w-full font-bold text-xs px-2.5 py-1.5 rounded-lg text-slate-900 transition ${
-                                currentUser?.role === 'orangtua'
-                                  ? 'bg-transparent border-transparent cursor-default'
-                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
-                              }`}
-                            />
-                          </td>
+                            {/* NAMA (EDITABLE) */}
+                            <td className="p-1.5 border-r border-slate-100">
+                              <input
+                                type="text"
+                                value={s.nama}
+                                readOnly={currentUser?.role === 'orangtua'}
+                                onChange={(e) => {
+                                  const val = e.target.value.toUpperCase();
+                                  setMasterStudents((prev: StudentRecord[]) =>
+                                    prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nama: val } : item))
+                                  );
+                                }}
+                                className={`w-full font-bold text-xs px-2.5 py-1.5 rounded-lg text-slate-900 transition ${
+                                  currentUser?.role === 'orangtua'
+                                    ? 'bg-transparent border-transparent cursor-default'
+                                    : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                                }`}
+                              />
+                            </td>
 
-                          {/* NIS (EDITABLE) */}
-                          <td className="p-1.5 border-r border-slate-100 text-center">
-                            <input
-                              type="text"
-                              value={s.nis}
-                              readOnly={currentUser?.role === 'orangtua'}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setMasterStudents((prev: StudentRecord[]) =>
-                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nis: val } : item))
-                                );
-                              }}
-                              className={`w-full font-mono text-center font-semibold text-xs px-2.5 py-1.5 rounded-lg text-slate-800 transition ${
-                                currentUser?.role === 'orangtua'
-                                  ? 'bg-transparent border-transparent cursor-default'
-                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
-                              }`}
-                            />
-                          </td>
+                            {/* NIS (EDITABLE) */}
+                            <td className="p-1.5 border-r border-slate-100 text-center">
+                              <input
+                                type="text"
+                                value={s.nis}
+                                readOnly={currentUser?.role === 'orangtua'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setMasterStudents((prev: StudentRecord[]) =>
+                                    prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, nis: val } : item))
+                                  );
+                                }}
+                                className={`w-full font-mono text-center font-semibold text-xs px-2.5 py-1.5 rounded-lg text-slate-800 transition ${
+                                  currentUser?.role === 'orangtua'
+                                    ? 'bg-transparent border-transparent cursor-default'
+                                    : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                                }`}
+                              />
+                            </td>
 
-                          {/* KELAS (EDITABLE) */}
-                          <td className="p-1.5 border-r border-slate-100 text-center">
-                            <input
-                              type="text"
-                              value={s.kelas}
-                              readOnly={currentUser?.role === 'orangtua'}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setMasterStudents((prev: StudentRecord[]) =>
-                                  prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, kelas: val } : item))
-                                );
-                              }}
-                              className={`w-full text-center text-xs px-2.5 py-1.5 rounded-lg font-semibold text-slate-800 transition ${
-                                currentUser?.role === 'orangtua'
-                                  ? 'bg-transparent border-transparent cursor-default'
-                                  : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
-                              }`}
-                            />
-                          </td>
+                            {/* KELAS (EDITABLE) */}
+                            <td className="p-1.5 border-r border-slate-100 text-center">
+                              <input
+                                type="text"
+                                value={s.kelas}
+                                readOnly={currentUser?.role === 'orangtua'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setMasterStudents((prev: StudentRecord[]) =>
+                                    prev.map((item: StudentRecord) => (item.no === s.no ? { ...item, kelas: val } : item))
+                                  );
+                                }}
+                                className={`w-full text-center text-xs px-2.5 py-1.5 rounded-lg font-semibold text-slate-800 transition ${
+                                  currentUser?.role === 'orangtua'
+                                    ? 'bg-transparent border-transparent cursor-default'
+                                    : 'bg-slate-50/60 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none'
+                                }`}
+                              />
+                            </td>
 
-                          {/* AKSI HAPUS */}
-                          <td className="p-1.5 text-center">
-                            {currentUser?.role !== 'orangtua' ? (
-                              <button
-                                onClick={() => {
-                                  if (masterStudents.length > 1) {
+                            {/* AKSI HAPUS */}
+                            <td className="p-1.5 text-center">
+                              {currentUser?.role !== 'orangtua' ? (
+                                <button
+                                  onClick={() => {
                                     const filtered = masterStudents
                                       .filter((item) => item.no !== s.no)
                                       .map((item, idx) => ({ ...item, no: idx + 1 }));
                                     setMasterStudents(filtered);
-                                    saveStudentsToFirebase(filtered, `Siswa "${s.nama}" berhasil dihapus dari Firebase.`);
-                                  }
-                                }}
-                                className="px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition"
-                                title="Hapus Siswa ini"
-                              >
-                                ✕
-                              </button>
-                            ) : (
-                              <span className="text-slate-300 text-xs">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                    saveStudentsToFirebase(filtered, `Siswa "${s.nama}" berhasil dihapus.`);
+                                  }}
+                                  className="px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition font-bold"
+                                  title="Hapus Siswa ini"
+                                >
+                                  ✕
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -4446,7 +4583,14 @@ export default function App() {
                     </thead>
 
                     <tbody className="divide-y divide-slate-100">
-                      {filteredSiswa.map((siswa, sIdx) => {
+                      {filteredSiswa.length === 0 ? (
+                        <tr>
+                          <td colSpan={36} className="p-8 text-center text-xs font-bold text-slate-400 bg-slate-50">
+                            Belum ada data nilai karena database siswa kosong. Silakan tambahkan atau impor data siswa terlebih dahulu.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSiswa.map((siswa, sIdx) => {
                         const renderCell = (
                           section: keyof SiswaAssessmentRecord,
                           subKey: string,
@@ -4569,7 +4713,8 @@ export default function App() {
                             {renderCell('inklusivitas', 'ph', siswa.inklusivitas.ph, 'hover:bg-emerald-50/50')}
                           </tr>
                         );
-                      })}
+                      })
+                    )}
                     </tbody>
                   </table>
                 </div>
@@ -4716,11 +4861,15 @@ export default function App() {
                       }`}
                       title={currentUser?.role === 'orangtua' ? 'Akses Orang Tua: Terkunci ke NISN siswa' : 'Pilih Siswa'}
                     >
-                      {dataSiswa.map((s) => (
-                        <option key={s.no} value={s.no}>
-                          {s.no}. {s.nama} ({s.nis})
-                        </option>
-                      ))}
+                      {dataSiswa.length === 0 ? (
+                        <option value={1} disabled>(Belum ada siswa)</option>
+                      ) : (
+                        dataSiswa.map((s) => (
+                          <option key={s.no} value={s.no}>
+                            {s.no}. {s.nama} ({s.nis})
+                          </option>
+                        ))
+                      )}
                     </select>
 
                     <button
@@ -4820,11 +4969,15 @@ export default function App() {
                       }`}
                       title={currentUser?.role === 'orangtua' ? 'Akses Orang Tua: Terkunci ke NISN siswa' : 'Pilih Siswa'}
                     >
-                      {dataSiswa.map((s) => (
-                        <option key={s.no} value={s.no}>
-                          {s.no}. {s.nama} ({s.nis})
-                        </option>
-                      ))}
+                      {dataSiswa.length === 0 ? (
+                        <option value={1} disabled>(Belum ada siswa)</option>
+                      ) : (
+                        dataSiswa.map((s) => (
+                          <option key={s.no} value={s.no}>
+                            {s.no}. {s.nama} ({s.nis})
+                          </option>
+                        ))
+                      )}
                     </select>
 
                     <button
@@ -7432,9 +7585,30 @@ export default function App() {
               firebaseConnected={firebaseConnected}
             />
           )}
+            </ErrorBoundary>
           </main>
         </div>
       </div>
+
+      {/* MODAL IMPOR DARI EXCEL */}
+      <ExcelImportModal
+        isOpen={showExcelImportModal}
+        onClose={() => setShowExcelImportModal(false)}
+        onImport={(imported, mode) => handleImportExcelStudents(imported, mode)}
+        currentStudentCount={masterStudents.length}
+        defaultKelas={currentUser?.kelas || (selectedClassFilter !== 'all' ? `Kelas ${selectedClassFilter}` : 'Kelas IV (Fase B)')}
+        defaultTahunAjaran={metaRapor.kopSekolah.tahunAjaran.replace('TAHUN AJARAN ', '') || '2026/2027'}
+      />
+
+      {/* MODAL KOSONGKAN DATABASE */}
+      <ClearDatabaseModal
+        isOpen={showClearDbModal}
+        onClose={() => setShowClearDbModal(false)}
+        onConfirmClear={handleClearDatabase}
+        onRestoreSample={handleRestoreSampleStudents}
+        currentStudentCount={masterStudents.length}
+        isSyncing={isFirebaseSyncing}
+      />
     </div>
   );
 }

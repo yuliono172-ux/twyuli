@@ -1,6 +1,17 @@
 import React from 'react';
-import { ChevronLeft, Printer, Search, Sparkles, BookOpen, CheckCircle2 } from 'lucide-react';
-import { SiswaAssessmentRecord, PILIHAN_PREDIKAT } from '../types/rapor';
+import { ChevronLeft, Printer, Search, CheckCircle2, Save } from 'lucide-react';
+import { SiswaAssessmentRecord, SiswaData, PILIHAN_PREDIKAT } from '../types/rapor';
+
+export type AspectId =
+  | 'kognitif'
+  | 'afektif'
+  | 'psikomotor'
+  | 'sosial'
+  | 'islamic_literacy'
+  | 'bilingual'
+  | 'talents'
+  | 'experience'
+  | 'inklusivitas';
 
 export interface AspectIndicatorConfig {
   key: string;
@@ -11,7 +22,7 @@ export interface AspectIndicatorConfig {
 }
 
 export interface AspectSheetConfig {
-  id: string;
+  id: AspectId;
   dataKey: keyof SiswaAssessmentRecord;
   title: string;
   badgeLabel: string;
@@ -23,7 +34,7 @@ export interface AspectSheetConfig {
   indicators: AspectIndicatorConfig[];
 }
 
-export const ASPECT_CONFIGS: Record<string, AspectSheetConfig> = {
+export const ASPECT_CONFIGS: Record<AspectId, AspectSheetConfig> = {
   kognitif: {
     id: 'kognitif',
     dataKey: 'kognitif',
@@ -175,29 +186,49 @@ export const ASPECT_CONFIGS: Record<string, AspectSheetConfig> = {
   }
 };
 
-interface AspectAssessmentSheetProps {
-  aspectId: string;
-  activeTriwulan: string;
-  searchTerm: string;
-  setSearchTerm: (s: string) => void;
-  filteredSiswa: SiswaAssessmentRecord[];
-  updateStudentField: (no: number, section: keyof SiswaAssessmentRecord, key: string, val: string) => void;
+export interface AspectAssessmentSheetProps {
+  aspectId: AspectId | string;
+  selectedTriwulan?: string;
+  activeTriwulan?: string;
+  searchTerm?: string;
+  setSearchTerm?: (s: string) => void;
+  dataSiswa?: SiswaData[];
+  filteredSiswa?: SiswaData[];
+  onUpdateField?: (no: number, key: string, val: string) => void;
+  updateStudentField?: (no: number, section: keyof SiswaAssessmentRecord, key: string, val: string) => void;
   onNavigateHome: () => void;
+  onSave?: () => void;
+  isFirebaseSyncing?: boolean;
 }
 
 export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
   aspectId,
+  selectedTriwulan,
   activeTriwulan,
-  searchTerm,
+  searchTerm = '',
   setSearchTerm,
+  dataSiswa,
   filteredSiswa,
+  onUpdateField,
   updateStudentField,
-  onNavigateHome
+  onNavigateHome,
+  onSave,
+  isFirebaseSyncing = false
 }) => {
-  const config = ASPECT_CONFIGS[aspectId] || ASPECT_CONFIGS.kognitif;
+  const config = ASPECT_CONFIGS[aspectId as AspectId] || ASPECT_CONFIGS.kognitif;
+  const currentTriwulan = activeTriwulan || selectedTriwulan || 'T1';
+  const students = filteredSiswa || dataSiswa || [];
+
+  const handleFieldChange = (studentNo: number, fieldKey: string, value: string) => {
+    if (onUpdateField) {
+      onUpdateField(studentNo, fieldKey, value);
+    } else if (updateStudentField) {
+      updateStudentField(studentNo, config.dataKey, fieldKey, value);
+    }
+  };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-4 sm:p-7 space-y-5 animate-fadeIn">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-4 sm:p-7 space-y-6 animate-fadeIn">
       {/* 1. HEADER BAR */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
         <div className="flex items-center gap-3">
@@ -213,7 +244,7 @@ export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
                 {config.badgeLabel}
               </span>
               <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-[#1E5BF9] border border-blue-200 text-xs font-bold font-mono">
-                {activeTriwulan}
+                {currentTriwulan}
               </span>
               <h2 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight">
                 TABEL PENILAIAN {config.title}
@@ -225,22 +256,34 @@ export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Cari Siswa..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5BF9] focus:outline-none transition w-44 sm:w-56"
-            />
-          </div>
+        <div className="flex items-center gap-2.5">
+          {setSearchTerm && (
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Cari Siswa..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5BF9] focus:outline-none transition w-44 sm:w-56"
+              />
+            </div>
+          )}
+          {onSave && (
+            <button
+              onClick={onSave}
+              disabled={isFirebaseSyncing}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isFirebaseSyncing ? 'Menyimpan...' : 'Simpan'}</span>
+            </button>
+          )}
           <button
             onClick={() => window.print()}
-            className="px-4 py-2 bg-[#1E5BF9] hover:bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition cursor-pointer"
+            className="px-3.5 py-2 bg-[#0B1528] hover:bg-[#152542] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5" />
+            <Printer className="w-3.5 h-3.5 text-blue-400" />
             <span>Cetak</span>
           </button>
         </div>
@@ -254,7 +297,7 @@ export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
             <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">
               <th rowSpan={3} className="border-r border-slate-200 p-3 w-12">NO</th>
               <th rowSpan={3} className="border-r border-slate-200 p-3 min-w-[200px] text-left">NAMA PESERTA DIDIK</th>
-              <th rowSpan={3} className="border-r border-slate-200 p-3 w-28 text-center">NIS</th>
+              <th rowSpan={3} className="border-r border-slate-200 p-3 w-28 text-center font-mono">NIS</th>
               <th rowSpan={3} className="border-r border-slate-200 p-3 w-28 text-center">KELAS</th>
               <th
                 colSpan={config.indicators.length}
@@ -290,70 +333,78 @@ export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
           </thead>
 
           <tbody className="divide-y divide-slate-100">
-            {filteredSiswa.map((siswa) => {
-              const aspectData = (siswa[config.dataKey] as any) || {};
+            {students.length === 0 ? (
+              <tr>
+                <td colSpan={config.indicators.length + 5} className="p-8 text-center text-slate-400">
+                  Tidak ada data siswa ditemukan untuk kriteria pencarian ini.
+                </td>
+              </tr>
+            ) : (
+              students.map((siswa) => {
+                const aspectData = ((siswa as any)?.[config.dataKey] as any) || {};
 
-              return (
-                <tr key={siswa.no} className="hover:bg-blue-50/30 transition">
-                  {/* NO */}
-                  <td className="border-r border-slate-100 p-2.5 text-center font-bold text-slate-400 font-mono">
-                    {siswa.no}
-                  </td>
+                return (
+                  <tr key={siswa.no} className="hover:bg-blue-50/30 transition">
+                    {/* NO */}
+                    <td className="border-r border-slate-100 p-2.5 text-center font-bold text-slate-400 font-mono">
+                      {siswa.no}
+                    </td>
 
-                  {/* NAMA */}
-                  <td className="border-r border-slate-100 p-2.5 font-bold text-slate-900 whitespace-nowrap">
-                    {siswa.nama}
-                  </td>
+                    {/* NAMA */}
+                    <td className="border-r border-slate-100 p-2.5 font-bold text-slate-900 whitespace-nowrap">
+                      {siswa.nama}
+                    </td>
 
-                  {/* NIS */}
-                  <td className="border-r border-slate-100 p-2.5 text-center font-mono text-slate-600">
-                    {siswa.nis}
-                  </td>
+                    {/* NIS */}
+                    <td className="border-r border-slate-100 p-2.5 text-center font-mono text-slate-600">
+                      {siswa.nis}
+                    </td>
 
-                  {/* KELAS */}
-                  <td className="border-r border-slate-100 p-2.5 text-center text-slate-600 whitespace-nowrap">
-                    {siswa.kelas}
-                  </td>
+                    {/* KELAS */}
+                    <td className="border-r border-slate-100 p-2.5 text-center text-slate-600 whitespace-nowrap">
+                      {siswa.kelas}
+                    </td>
 
-                  {/* NILAI DROPDOWNS PER INDIKATOR */}
-                  {config.indicators.map((ind, i) => {
-                    const currentVal = aspectData[ind.key] || '';
-                    return (
-                      <td
-                        key={ind.key}
-                        className={`border-r border-slate-100 p-1 text-center ${
-                          i % 2 === 0 ? 'bg-slate-50/40' : 'bg-white'
-                        }`}
-                      >
-                        <select
-                          value={currentVal}
-                          onChange={(e) => updateStudentField(siswa.no, config.dataKey, ind.key, e.target.value)}
-                          className="w-full text-center text-xs p-1.5 font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer transition"
+                    {/* NILAI DROPDOWNS PER INDIKATOR */}
+                    {config.indicators.map((ind, i) => {
+                      const currentVal = aspectData[ind.key] || '';
+                      return (
+                        <td
+                          key={ind.key}
+                          className={`border-r border-slate-100 p-1 text-center ${
+                            i % 2 === 0 ? 'bg-slate-50/40' : 'bg-white'
+                          }`}
                         >
-                          <option value="">--</option>
-                          {PILIHAN_PREDIKAT.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    );
-                  })}
+                          <select
+                            value={currentVal}
+                            onChange={(e) => handleFieldChange(siswa.no, ind.key, e.target.value)}
+                            className="w-full text-center text-xs p-1.5 font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer transition"
+                          >
+                            <option value="">--</option>
+                            {PILIHAN_PREDIKAT.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      );
+                    })}
 
-                  {/* DESKRIPSI TEXTAREA */}
-                  <td className="p-1.5">
-                    <textarea
-                      rows={2}
-                      value={aspectData.deskripsi || ''}
-                      onChange={(e) => updateStudentField(siswa.no, config.dataKey, 'deskripsi', e.target.value)}
-                      className="w-full text-[11px] p-2 border border-slate-200 rounded-xl bg-slate-50/60 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition"
-                      placeholder={`Deskripsi capaian ${config.title.toLowerCase()} siswa...`}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+                    {/* DESKRIPSI TEXTAREA */}
+                    <td className="p-1.5">
+                      <textarea
+                        rows={2}
+                        value={aspectData.deskripsi || ''}
+                        onChange={(e) => handleFieldChange(siswa.no, 'deskripsi', e.target.value)}
+                        className="w-full text-[11px] p-2 border border-slate-200 rounded-xl bg-slate-50/60 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition"
+                        placeholder={`Deskripsi capaian ${config.title.toLowerCase()} siswa...`}
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -365,7 +416,7 @@ export const AspectAssessmentSheet: React.FC<AspectAssessmentSheetProps> = ({
           <span>Setiap perubahan nilai tersimpan otomatis dan terhubung ke Sheet DBTW & Cetak Rapor Resmi.</span>
         </div>
         <div className="font-mono text-[11px] text-slate-500">
-          Total: {filteredSiswa.length} Peserta Didik
+          Total: {students.length} Peserta Didik
         </div>
       </div>
     </div>

@@ -57,7 +57,8 @@ export const PerbandinganTriwulan: React.FC<PerbandinganTriwulanProps> = ({
   onSelectStudent,
   onNavigateHome
 }) => {
-  const currentStudent = students.find((s) => s.no === selectedStudentNo) || students[0];
+  const safeStudents = students || [];
+  const currentStudent = safeStudents.find((s) => s.no === selectedStudentNo) || safeStudents[0];
 
   // Comparison modes: 2 quarters vs all quarters
   const [comparisonMode, setComparisonMode] = useState<'two_quarters' | 'all_quarters'>('two_quarters');
@@ -99,6 +100,22 @@ export const PerbandinganTriwulan: React.FC<PerbandinganTriwulanProps> = ({
     setPeriodA(a);
     setPeriodB(b);
   };
+
+  // Early return if no student data
+  if (!currentStudent) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center space-y-4">
+        <h3 className="text-lg font-bold text-slate-800">Tidak ada data siswa tersedia</h3>
+        <p className="text-sm text-slate-500">Silakan tambahkan data siswa terlebih dahulu di Database Siswa.</p>
+        <button
+          onClick={onNavigateHome}
+          className="px-4 py-2 bg-[#1E5BF9] text-white rounded-xl text-xs font-bold"
+        >
+          Kembali ke Dashboard
+        </button>
+      </div>
+    );
+  }
 
   // Calculations
   const comparison = compareTwoQuarters(currentStudent, periodA, periodB);
