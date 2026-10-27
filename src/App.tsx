@@ -3186,17 +3186,11 @@ export default function App() {
           {currentPage === 'home' && (() => {
             const currentStudentMaster = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0] || fallbackMasterStudent;
             const currentStudentData = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0] || fallbackSiswaItem;
-            const activeTriwulanLabel = TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan)?.label || activeTriwulan;
-
             // Logika Periode Pembanding (Triwulan Sebelumnya)
             const prevQuarterKey: TriwulanKey | null =
               activeTriwulan === 'T2' ? 'T1' :
               activeTriwulan === 'T3' ? 'T2' :
               activeTriwulan === 'T4' ? 'T3' : null;
-            const prevQuarterLabel = prevQuarterKey
-              ? TRIWULAN_OPTIONS.find((t) => t.id === prevQuarterKey)?.label || prevQuarterKey
-              : null;
-
             // Perbandingan data aktual vs Triwulan sebelumnya
             const prevComparison = prevQuarterKey
               ? compareTwoQuarters(currentStudentMaster, prevQuarterKey, activeTriwulan)
@@ -3258,46 +3252,10 @@ export default function App() {
               ? Math.round((filledIndicatorsCount / totalIndicatorsCount) * 100)
               : 0;
 
-            // Rerata keseluruhan aspek yang sudah terisi
             const assessedAspects = aspectMetricsList.filter((a) => a.hasData && a.avgScore !== null);
-            const overallAverage = assessedAspects.length > 0
-              ? Number((assessedAspects.reduce((acc, a) => acc + (a.avgScore || 0), 0) / assessedAspects.length).toFixed(2))
-              : null;
-            const overallGrade = overallAverage !== null ? getGradeFromScore(overallAverage) : '-';
-
             // Sorting untuk analisis prioritas
             const sortedByScore = [...assessedAspects].sort((a, b) => (a.avgScore || 0) - (b.avgScore || 0));
-            const lowestAspect = sortedByScore[0] || null;
             const highestAspect = sortedByScore[sortedByScore.length - 1] || null;
-
-            // Data Preview Radar / Spider Chart (9 Dimensi)
-            const CX = 130;
-            const CY = 130;
-            const R = 82;
-            const numAspects = ASPEK_LIST.length;
-
-            const radarGridPolygons = [0.2, 0.4, 0.6, 0.8, 1.0].map((level) => {
-              return ASPEK_LIST.map((_, i) => {
-                const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
-                const r = R * level;
-                return `${(CX + r * Math.cos(angle)).toFixed(1)},${(CY + r * Math.sin(angle)).toFixed(1)}`;
-              }).join(' ');
-            });
-
-            const radarDataPoints = aspectMetricsList.map((asp, i) => {
-              const angle = -Math.PI / 2 + (i * 2 * Math.PI) / numAspects;
-              const val = asp.avgScore ?? 1.0;
-              const r = (val / 5) * R;
-              return {
-                x: Number((CX + r * Math.cos(angle)).toFixed(1)),
-                y: Number((CY + r * Math.sin(angle)).toFixed(1)),
-                score: asp.avgScore,
-                nama: asp.nama,
-                kode: (ASPEK_SIDEBAR_LIST.find((s) => s.id === asp.id)?.kode) || asp.nama.slice(0, 2),
-                labelX: Number((CX + (R + 18) * Math.cos(angle)).toFixed(1)),
-                labelY: Number((CY + (R + 18) * Math.sin(angle)).toFixed(1))
-              };
-            });
 
             const studentTrends = getStudentQuarterTrends(selectedStudent);
             const prediction = predictNextQuarterAchievement(selectedStudent, activeTriwulan, studentTrends.quarters);
@@ -3306,7 +3264,6 @@ export default function App() {
               <ModernAdminDashboard
                 prediction={prediction}
                 dataSiswa={dataSiswa}
-                masterStudents={masterStudents}
                 teachersList={teachersList}
                 activeTriwulan={activeTriwulan}
                 setActiveTriwulan={setActiveTriwulan}
@@ -3314,17 +3271,11 @@ export default function App() {
                 selectedStudentNum={selectedStudentNum}
                 setSelectedStudentNum={setSelectedStudentNum}
                 selectedStudent={selectedStudent}
-                overallAverage={overallAverage}
-                overallGrade={overallGrade}
                 completionPct={completionPct}
                 filledIndicatorsCount={filledIndicatorsCount}
                 totalIndicatorsCount={totalIndicatorsCount}
                 unfilledIndicatorsList={unfilledIndicatorsList}
                 highestAspect={highestAspect}
-                lowestAspect={lowestAspect}
-                prevQuarterLabel={prevQuarterLabel}
-                prevQuarterKey={prevQuarterKey}
-                prevComparison={prevComparison}
                 aspectMetricsList={aspectMetricsList}
                 onNavigate={(page, extra) => {
                   if (page === 'to_print_page' && extra?.mode) {
@@ -3334,7 +3285,6 @@ export default function App() {
                 }}
                 onSelectAspect={(tw, aspId) => handleSelectAspectSubmenu(tw, aspId)}
                 onOpenTeachers={() => setCurrentPage('teachers')}
-                isFirebaseSyncing={isFirebaseSyncing}
                 firebaseConnected={firebaseConnected}
               />
             );

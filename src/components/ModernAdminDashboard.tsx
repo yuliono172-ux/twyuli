@@ -27,7 +27,6 @@ import { UserAccount } from '../App';
 interface ModernAdminDashboardProps {
   prediction?: any;
   dataSiswa: SiswaData[];
-  masterStudents: any[];
   teachersList: TeacherRecord[];
   activeTriwulan: TriwulanKey;
   setActiveTriwulan: (t: TriwulanKey) => void;
@@ -35,29 +34,21 @@ interface ModernAdminDashboardProps {
   selectedStudentNum: number;
   setSelectedStudentNum: (no: number) => void;
   selectedStudent: SiswaData;
-  overallAverage: number | null;
-  overallGrade: string;
   completionPct: number;
   filledIndicatorsCount: number;
   totalIndicatorsCount: number;
   unfilledIndicatorsList: Array<{ aspectId: string; aspectName: string; indName: string }>;
   highestAspect: any;
-  lowestAspect: any;
-  prevQuarterLabel: string | null;
-  prevQuarterKey: string | null;
-  prevComparison: any;
   aspectMetricsList: any[];
   onNavigate: (page: string, extra?: any) => void;
   onSelectAspect: (triwulan: TriwulanKey, aspectId: string) => void;
   onOpenTeachers: () => void;
-  isFirebaseSyncing: boolean;
   firebaseConnected: boolean;
 }
 
 export const ModernAdminDashboard: React.FC<ModernAdminDashboardProps> = ({
   prediction,
   dataSiswa,
-  masterStudents,
   teachersList,
   activeTriwulan,
   setActiveTriwulan,
@@ -65,22 +56,15 @@ export const ModernAdminDashboard: React.FC<ModernAdminDashboardProps> = ({
   selectedStudentNum,
   setSelectedStudentNum,
   selectedStudent,
-  overallAverage,
-  overallGrade,
   completionPct,
   filledIndicatorsCount,
   totalIndicatorsCount,
   unfilledIndicatorsList,
   highestAspect,
-  lowestAspect,
-  prevQuarterLabel,
-  prevQuarterKey,
-  prevComparison,
   aspectMetricsList,
   onNavigate,
   onSelectAspect,
   onOpenTeachers,
-  isFirebaseSyncing,
   firebaseConnected
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
