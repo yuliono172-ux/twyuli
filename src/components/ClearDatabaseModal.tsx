@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, AlertTriangle, RefreshCw, X, ShieldAlert, Check } from 'lucide-react';
+import { Trash2, RefreshCw, X, ShieldAlert } from 'lucide-react';
 
 interface ClearDatabaseModalProps {
   isOpen: boolean;

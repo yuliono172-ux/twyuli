@@ -48,8 +48,7 @@ export const getGradeFromScore = (score: number | null): string => {
 };
 
 export const getStudentSpiderAnalysis = (
-  assessment: SiswaAssessmentRecord,
-  namaSiswa: string = 'Siswa'
+  assessment: SiswaAssessmentRecord
 ): SpiderAnalysisResult => {
   let totalScoreSum = 0;
   let hasAnyData = false;
@@ -171,12 +170,11 @@ export const compareTwoQuarters = (
   const periodeB = TRIWULAN_OPTIONS.find((t) => t.id === quarterBId) || TRIWULAN_OPTIONS[1];
 
   const sTriwulan = student?.triwulan || ({} as any);
-  const studentName = student?.nama || 'Siswa';
   const dataA = sTriwulan[quarterAId] || {};
   const dataB = sTriwulan[quarterBId] || {};
 
-  const analysisA = getStudentSpiderAnalysis(dataA, studentName);
-  const analysisB = getStudentSpiderAnalysis(dataB, studentName);
+  const analysisA = getStudentSpiderAnalysis(dataA);
+  const analysisB = getStudentSpiderAnalysis(dataB);
 
   let naikCount = 0;
   let stagnanCount = 0;
@@ -337,11 +335,10 @@ export const getAllQuartersComparison = (student: StudentRecord): {
   }[];
 } => {
   const sTriwulan = student?.triwulan || ({} as any);
-  const studentName = student?.nama || 'Siswa';
-  const analysisT1 = getStudentSpiderAnalysis(sTriwulan.T1, studentName);
-  const analysisT2 = getStudentSpiderAnalysis(sTriwulan.T2, studentName);
-  const analysisT3 = getStudentSpiderAnalysis(sTriwulan.T3, studentName);
-  const analysisT4 = getStudentSpiderAnalysis(sTriwulan.T4, studentName);
+  const analysisT1 = getStudentSpiderAnalysis(sTriwulan.T1);
+  const analysisT2 = getStudentSpiderAnalysis(sTriwulan.T2);
+  const analysisT3 = getStudentSpiderAnalysis(sTriwulan.T3);
+  const analysisT4 = getStudentSpiderAnalysis(sTriwulan.T4);
 
   const aspects: AllQuartersAspectRow[] = ASPEK_LIST.map((asp) => {
     const asp1 = analysisT1.aspects.find((a) => a.id === asp.id);

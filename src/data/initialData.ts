@@ -1,4 +1,4 @@
-import { StudentRecord, SiswaAssessmentRecord, TriwulanKey } from '../types/rapor';
+import { StudentRecord, SiswaAssessmentRecord } from '../types/rapor';
 
 export const STUDENT_NAMES: { no: number; nama: string; nis: string }[] = [
   { no: 1, nama: 'ABIZAR ARFAN RAQQILLA', nis: '202340001' },
@@ -26,7 +26,7 @@ export const STUDENT_NAMES: { no: number; nama: string; nis: string }[] = [
   { no: 23, nama: 'LAFISYA ORLIN KALINGGA', nis: '202340023' },
   { no: 24, nama: 'MAHREEN SHAFANA ALMAHYRA', nis: '202340025' },
   { no: 25, nama: 'MIRZA AMMAR AHZAALAN', nis: '202340026' },
-  { no: 26, nama: 'MUHAMMAD树GAOZHAN AL GHIFARI'.replace('树', ''), nis: '202340027' },
+  { no: 26, nama: 'MUHAMMAD GAOZHAN AL GHIFARI', nis: '202340027' },
   { no: 27, nama: 'PUTRI SALSABILA', nis: '202230022' },
   { no: 28, nama: 'RASYIQUL ABID IBNU PURNOMO', nis: '202340028' },
   { no: 29, nama: 'SHAKIRA RAMADHANI PERMANA', nis: '202340029' },
@@ -330,7 +330,6 @@ export const INITIAL_MASTER_STUDENTS: StudentRecord[] = STUDENT_NAMES.map((s, id
   };
 
   const buildStudentRecordForQuarter = (quarterNum: 1 | 2 | 3 | 4): SiswaAssessmentRecord => {
-    const qKey = `T${quarterNum}` as TriwulanKey;
     const kogGrade = getQuarterGrade(quarterNum, 1);
     const afkGrade = getQuarterGrade(quarterNum, 0);
     const psiGrade = getQuarterGrade(quarterNum, 1);

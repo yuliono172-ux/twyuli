@@ -5,7 +5,6 @@ import {
   set,
   get,
   onValue,
-  off,
   update,
   remove
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
@@ -32,7 +31,7 @@ export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getA
 export const db = getDatabase(app);
 export const auth = getAuth(app);
 
-export { ref, set, get, onValue, off, update, remove };
+export { ref, set, get, onValue, update, remove };
 export { onAuthStateChanged, signInWithEmailAndPassword, signOut };
 
 export interface TeacherRecord {

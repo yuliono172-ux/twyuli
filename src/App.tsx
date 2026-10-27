@@ -6,8 +6,6 @@ import {
   Search,
   CheckCircle2,
   Sparkles,
-  ArrowRight,
-  SlidersHorizontal,
   Download,
   Upload,
   Radar,
@@ -30,8 +28,6 @@ import {
   Palette,
   Type,
   FolderOpen,
-  Check,
-  Settings2,
   User,
   Lock,
   Eye,
@@ -40,8 +36,6 @@ import {
   Users,
   Shield,
   Save,
-  Cloud,
-  CloudOff,
   Calendar,
   School,
   Trash2,
@@ -74,14 +68,11 @@ import {
   createEmptyAssessmentRecord
 } from './data/initialData';
 import {
-  getAllQuartersComparison,
   compareTwoQuarters,
   getGradeFromScore
 } from './utils/quarterAnalysis';
 import {
-  predictNextQuarterAchievement,
-  StudentQuarterPredictionResult,
-  DimensionPredictionItem
+  predictNextQuarterAchievement
 } from './utils/quarterPrediction';
 import { PerbandinganTriwulan } from './components/PerbandinganTriwulan';
 import { TeacherManagement } from './components/TeacherManagement';
@@ -97,7 +88,6 @@ import {
   set,
   get,
   onValue,
-  off,
   remove,
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -131,7 +121,6 @@ const isUserAccount = (value: unknown): value is UserAccount => {
     typeof user.nama === 'string'
   );
 };
-
 const classKeyFor = (className: string) =>
   className
     .normalize('NFD')
@@ -236,121 +225,6 @@ interface SiswaData {
   tahunAjaran?: string;
   allTriwulan?: Record<TriwulanKey, SiswaAssessmentRecord>;
 }
-
-// 30 Siswa Resmi Kelas IV
-const STUDENT_NAMES: { no: number; nama: string; nis: string }[] = [
-  { no: 1, nama: 'ABIZAR ARFAN RAQQILLA', nis: '202340001' },
-  { no: 2, nama: 'ADZKIA HILYA NAFIZAH', nis: '202540031' },
-  { no: 3, nama: 'AGHA FAIQ FIRMANSYAH', nis: '202340002' },
-  { no: 4, nama: 'AILLEN NATHANIA WAHYU', nis: '202340003' },
-  { no: 5, nama: 'ALDEN MALIK AR\'RAUF', nis: '202340004' },
-  { no: 6, nama: 'ANUGRAH DAFFA HAFIDZUDIN', nis: '202340005' },
-  { no: 7, nama: 'ARETHA KHANZA NAVISHA AZKA WIBOWO', nis: '202340006' },
-  { no: 8, nama: 'ARSHAKA MUHAMMAD ZHAFRAN', nis: '202340007' },
-  { no: 9, nama: 'AZFAR ASDAFI AZKAR', nis: '202340008' },
-  { no: 10, nama: 'BOB GHALIBIE BORNEO', nis: '202340010' },
-  { no: 11, nama: 'DHIA HANUM SYARIF', nis: '202340011' },
-  { no: 12, nama: 'DIANUNA SERENADA LASHIRA SHANUM', nis: '202340012' },
-  { no: 13, nama: 'DIZKHA AZEL RUDYANSYAH', nis: '202340013' },
-  { no: 14, nama: 'EMBUN LYCOFOS AZZAHRO', nis: '202340014' },
-  { no: 15, nama: 'FADLI NUR LESMANA', nis: '202340015' },
-  { no: 16, nama: 'FATHAN AL MAISAN ZHAFAR', nis: '202340016' },
-  { no: 17, nama: 'FATIH ATTALA RIZKIANO', nis: '202340017' },
-  { no: 18, nama: 'GWEN FELISHA SYAREEFA', nis: '202340018' },
-  { no: 19, nama: 'JAVIER RAUF FAYADI', nis: '202340019' },
-  { no: 20, nama: 'JOLIE ALESHA MECCA', nis: '202340020' },
-  { no: 21, nama: 'KHANSA SABIL HUMAIRA', nis: '202340021' },
-  { no: 22, nama: 'KHANZA AILA ASYIFA', nis: '202340022' },
-  { no: 23, nama: 'LAFISYA ORLIN KALINGGA', nis: '202340023' },
-  { no: 24, nama: 'MAHREEN SHAFANA ALMAHYRA', nis: '202340025' },
-  { no: 25, nama: 'MIRZA AMMAR AHZAALAN', nis: '202340026' },
-  { no: 26, nama: 'MUHAMMAD GAOZHAN AL GHIFARI', nis: '202340027' },
-  { no: 27, nama: 'PUTRI SALSABILA', nis: '202230022' },
-  { no: 28, nama: 'RASYIQUL ABID IBNU PURNOMO', nis: '202340028' },
-  { no: 29, nama: 'SHAKIRA RAMADHANI PERMANA', nis: '202340029' },
-  { no: 30, nama: 'SHAZIA ATHALLA SUGIARTO', nis: '202340030' }
-];
-
-const INITIAL_DATA: SiswaData[] = STUDENT_NAMES.map((s, idx) => {
-  const isAbizar = idx === 0;
-  return {
-    no: s.no,
-    nama: s.nama,
-    nis: s.nis,
-    kelas: 'IV (Empat)',
-    kognitif: {
-      rp: isAbizar ? 'B' : '',
-      pi: isAbizar ? 'B' : '',
-      rm: isAbizar ? 'B' : '',
-      pm: isAbizar ? 'B' : '',
-      kr: isAbizar ? 'C' : '',
-      ki: isAbizar ? 'C' : '',
-      deskripsi: isAbizar ? 'Mampu memahami materi dengan baik dan berpikir kreatif dalam menyelesaikan tugas.' : ''
-    },
-    afektif: {
-      em: isAbizar ? 'C' : '',
-      sh: isAbizar ? 'C' : '',
-      mo: isAbizar ? 'C' : '',
-      ks: isAbizar ? 'Defisit' : '',
-      kt: isAbizar ? 'Defisit' : '',
-      deskripsi: isAbizar ? 'Perlu pendampingan dalam kesabaran dan ketangguhan saat menghadapi tantangan.' : ''
-    },
-    psikomotor: {
-      mk: isAbizar ? 'Defisit' : '',
-      mh: isAbizar ? 'Defisit' : '',
-      re: isAbizar ? 'Exceptional' : '',
-      kk: isAbizar ? 'Exceptional' : '',
-      deskripsi: isAbizar ? 'Sangat terampil dalam mengendalikan perilaku dan menggunakan peralatan di sekitarnya.' : ''
-    },
-    sosial: {
-      ot: isAbizar ? 'Exceptional' : '',
-      ld: isAbizar ? 'Exceptional' : '',
-      at: isAbizar ? 'A' : '',
-      ko: isAbizar ? 'A' : '',
-      deskripsi: isAbizar ? 'Memiliki jiwa kepemimpinan yang sangat menonjol, taat aturan, dan komunikatif.' : ''
-    },
-    islamicLiteracy: {
-      aq: isAbizar ? 'A' : '',
-      ak: isAbizar ? 'B' : '',
-      ib: isAbizar ? 'B' : '',
-      deskripsi: isAbizar ? 'Menunjukkan kecintaan mendalam terhadap Al-Qur\'an dan bersemangat dalam beribadah.' : ''
-    },
-    bilingual: {
-      kd: isAbizar ? 'Defisit' : '',
-      sb: isAbizar ? 'Defisit' : '',
-      deskripsi: isAbizar ? 'Perlu dorongan untuk meningkatkan kepercayaan diri berbahasa dwi-bahasa.' : ''
-    },
-    talents: {
-      uq: isAbizar ? 'Exceptional' : '',
-      in: isAbizar ? 'Exceptional' : '',
-      deskripsi: isAbizar ? 'Memiliki keunikan pribadi yang sangat positif dan minat hobi yang kuat.' : ''
-    },
-    experience: {
-      ex: isAbizar ? 'Exceptional' : '',
-      ob: isAbizar ? 'A' : '',
-      re: isAbizar ? 'A' : '',
-      deskripsi: isAbizar ? 'Sangat antusias bereksplorasi mencoba hal baru dan jeli dalam mengamati.' : ''
-    },
-    inklusivitas: {
-      so: isAbizar ? 'A' : '',
-      fa: isAbizar ? 'A' : '',
-      ph: isAbizar ? 'A' : '',
-      deskripsi: isAbizar ? 'Menunjukkan solidaritas tinggi, memperlakukan teman dengan adil dan respek.' : ''
-    },
-    deskripsiRapor: isAbizar
-      ? `Selama periode pembelajaran ini, Ananda Abizar Arfan Raqqilla menunjukkan perkembangan yang sangat positif dan menggembirakan. Ananda Abizar Arfan Raqqilla tumbuh menjadi pribadi yang hangat, percaya diri, dan penuh rasa ingin tahu. Ia memiliki antusiasme tinggi dalam mengeksplorasi pengalaman belajar baru serta menunjukkan kekuatan menonjol pada aspek sosial-emosional dan keagamaan.
-
-Ananda Abizar Arfan Raqqilla adalah anak yang tangguh dan tidak mudah menyerah saat menghadapi tantangan. Ia memiliki keberanian komunikasi yang baik, semangat eksplorasi bahasa, serta menunjukkan ketertarikan dan kecintaan terhadap Al-Qur'an. Dalam berinteraksi sehari-hari, Ananda Abizar Arfan Raqqilla menunjukkan empati yang tinggi, sikap adil, serta ketulusan untuk membantu dan merangkul teman-temannya. Koordinasi gerak tubuh dan keluwesannya dalam menggunakan media belajar juga berkembang sangat baik, menjadi fondasi kuat bagi kemandirian dan pembentukan karakter positifnya.
-
-Untuk mendukung tumbuh kembang Ananda Abizar Arfan Raqqilla secara optimal, fokus pendampingan selanjutnya adalah menguatkan fokus dan daya amatinya secara bertahap, seperti dalam memahami petunjuk belajar, ketelitian berpikir kritis, serta keterampilan motorik halus. Kami juga terus mendampingi Ananda Abizar Arfan Raqqilla dalam pembiasaan perilaku, antusiasme ibadah, serta kepatuhan pada kesepakatan bersama. Kami meyakini area-area ini dapat terus ditumbuhkan melalui pengalaman belajar yang menyenangkan, bermakna, dan penuh kasih sayang.`
-      : undefined,
-    saranRapor: isAbizar
-      ? `Terima kasih yang sebesar-besarnya kepada  Parents  yang telah merawat semangat belajar Ananda Abizar Arfan Raqqilla hingga ia tumbuh menjadi anak yang tangguh, empati, dan penuh rasa ingin tahu. Untuk terus mendukung perkembangannya di rumah,  Parents  dapat secara bertahap mengasah fokus dan daya ingat Ananda Abizar Arfan Raqqilla dengan memberikan petunjuk sederhana satu per satu saat beraktivitas, lalu mengundangnya mengulang instruksi tersebut lewat obrolan yang santai. Karakter Ananda Abizar Arfan Raqqilla yang tidak mudah menyerah juga bisa disalurkan lewat kegiatan bermain bersama yang melatih jemari dan ketelitian—seperti merakit lego, melipat kertas, atau menggambar—dengan tetap memberikan apresiasi tulus pada setiap proses dan usahanya, bukan hanya pada hasil akhir.
-
-Sikap santun dan kebaikan hati Ananda Abizar Arfan Raqqilla yang luar biasa tentu tidak lepas dari keteladanan hangat di rumah. Agar kedisiplinan dan rasa tanggung jawabnya semakin mekar, ajak Ananda Abizar Arfan Raqqilla membuat kesepakatan rutinitas harian atau jadwal bergambar bersama, sehingga ia merasa bangga dan memiliki peran aktif saat menjalankan ibadah maupun merapikan perlengkapannya. Menjelang waktu tidur, luangkan momen pillow talk untuk mengapresiasi hal-hal baik yang ia lakukan sepanjang hari; ruang aman ini tidak hanya mempererat ikatan emosional, tetapi juga menjadi sarana yang sangat indah bagi Ananda Abizar Arfan Raqqilla untuk berlatih mengamati, berpikir kritis, dan mengungkapkan isi hatinya.`
-      : undefined
-  };
-});
 
 const PILIHAN_PREDIKAT = ['Exceptional', 'A', 'B', 'C', 'Defisit'];
 
@@ -1107,12 +981,11 @@ export default function App() {
   });
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [activeTriwulan, setActiveTriwulan] = useState<TriwulanKey>('T1');
-  const [reportTriwulan, setReportTriwulan] = useState<TriwulanKey>('T1');
   const [expandedTriwulan, setExpandedTriwulan] = useState<TriwulanKey | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentNum, setSelectedStudentNum] = useState<number>(1);
-  const [printViewMode, setPrintViewMode] = useState<'ringkas' | 'detail'>('detail');
+  const [printViewMode] = useState<'ringkas' | 'detail'>('detail');
   const [showClearDbModal, setShowClearDbModal] = useState<boolean>(false);
   const [showExcelImportModal, setShowExcelImportModal] = useState<boolean>(false);
 
@@ -1158,7 +1031,6 @@ export default function App() {
       // Single-open accordion behavior: hanya satu yang terbuka, yang lain collapse
       setExpandedTriwulan(tKey);
       setActiveTriwulan(tKey);
-      setReportTriwulan(tKey);
       setPrintStatus(`Periode aktif: ${tKey}. Data tersambung ke Triwulan ${tKey.replace('T', '')}.`);
       setTimeout(() => setPrintStatus(null), 3000);
     }
@@ -1166,7 +1038,6 @@ export default function App() {
 
   const handleSelectAspectSubmenu = (tKey: TriwulanKey, aspectId: string) => {
     setActiveTriwulan(tKey);
-    setReportTriwulan(tKey);
     setExpandedTriwulan(tKey);
     setCurrentPage(aspectId);
     setIsMobileSidebarOpen(false);
@@ -1231,6 +1102,7 @@ export default function App() {
   const [authProfileError, setAuthProfileError] = useState<string | null>(null);
 
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
@@ -1238,16 +1110,6 @@ export default function App() {
 
   // Teachers State (stored at Firebase node /teachers)
   const [teachersList, setTeachersList] = useState<TeacherRecord[]>([]);
-  const [isTeachersLoaded, setIsTeachersLoaded] = useState(false);
-  const [teacherFormData, setTeacherFormData] = useState<Omit<TeacherRecord, 'id'>>({
-    nama: '',
-    tingkatKelas: '4',
-    namaKelas: 'Kelas IV (Fase B)',
-    username: '',
-    password: '',
-    niy: ''
-  });
-  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
 
   // Master Database Multi-Quarter (T1, T2, T3, T4)
   const [masterStudents, setMasterStudents] = useState<StudentRecord[]>([]);
@@ -1297,49 +1159,6 @@ export default function App() {
       allTriwulan: s.triwulan
     }));
   }, [masterStudents, activeTriwulan, currentUser, selectedClassFilter]);
-
-  // Derived reportSiswa untuk Laporan Rapor & Spider Chart
-  const reportSiswa: SiswaData[] = useMemo(() => {
-    let baseList = currentUser?.role === 'orangtua' && currentUser.studentNo
-      ? masterStudents.filter((s) => s.no === currentUser.studentNo || s.nis === currentUser.nisn)
-      : masterStudents;
-
-    if (currentUser?.role === 'guru') {
-      const guruTingkat = currentUser.tingkatKelas || '4';
-      const guruKelas = (currentUser.kelas || '').toLowerCase();
-      baseList = baseList.filter((s) => {
-        const sk = (s.kelas || '').toLowerCase();
-        if (guruTingkat === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
-        if (guruTingkat === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
-        if (guruTingkat === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
-        if (guruTingkat === '3' && sk.includes('iii')) return true;
-        if (guruTingkat === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
-        if (guruTingkat === '6' && sk.includes('vi')) return true;
-        return sk.includes(guruKelas) || guruKelas.includes(sk);
-      });
-    } else if (selectedClassFilter !== 'all') {
-      baseList = baseList.filter((s) => {
-        const sk = (s.kelas || '').toLowerCase();
-        if (selectedClassFilter === '4' && (sk.includes('iv') || sk.includes('4'))) return true;
-        if (selectedClassFilter === '1' && (sk.includes('i') && !sk.includes('iv') && !sk.includes('ii') && !sk.includes('iii'))) return true;
-        if (selectedClassFilter === '2' && (sk.includes('ii') && !sk.includes('iii'))) return true;
-        if (selectedClassFilter === '3' && sk.includes('iii')) return true;
-        if (selectedClassFilter === '5' && (sk.includes('v') && !sk.includes('iv') && !sk.includes('vi'))) return true;
-        if (selectedClassFilter === '6' && sk.includes('vi')) return true;
-        return true;
-      });
-    }
-
-    return baseList.map((s) => ({
-      no: s.no,
-      nama: s.nama,
-      nis: s.nis,
-      kelas: s.kelas,
-      tahunAjaran: s.tahunAjaran,
-      ...s.triwulan[reportTriwulan],
-      allTriwulan: s.triwulan
-    }));
-  }, [masterStudents, reportTriwulan, currentUser, selectedClassFilter]);
 
   const updateStudentDeskripsiRapor = (no: number, text: string) => {
     if (currentUser?.role === 'orangtua') return;
@@ -1548,16 +1367,13 @@ export default function App() {
       }
     );
 
-    return () => {
-      off(studentsRef, 'value', unsubscribe);
-    };
+    return unsubscribe;
   }, [currentUser]);
 
   // Teacher credentials and profiles are not readable in teacher sessions.
   useEffect(() => {
     if (currentUser?.role !== 'admin') {
       setTeachersList([]);
-      setIsTeachersLoaded(false);
       return;
     }
 
@@ -1566,7 +1382,6 @@ export default function App() {
       teachersRef,
       (snapshot: any) => {
         setFirebaseConnected(true);
-        setIsTeachersLoaded(true);
         if (snapshot.exists()) {
           const val = snapshot.val();
           const list: TeacherRecord[] = [];
@@ -1585,14 +1400,11 @@ export default function App() {
       },
       (error: any) => {
         console.error('Firebase /teachers onValue error:', error);
-        setIsTeachersLoaded(false);
         setFirebaseConnected(false);
       }
     );
 
-    return () => {
-      off(teachersRef, 'value', unsubscribe);
-    };
+    return unsubscribe;
   }, [currentUser]);
 
   // 3. SINKRONISASI REALTIME FIREBASE: /app_settings
@@ -1641,7 +1453,6 @@ export default function App() {
 
           if (val.activeTriwulan && ['T1', 'T2', 'T3', 'T4'].includes(val.activeTriwulan)) {
             setActiveTriwulan(val.activeTriwulan as TriwulanKey);
-            setReportTriwulan(val.activeTriwulan as TriwulanKey);
           }
         }
       },
@@ -1650,9 +1461,7 @@ export default function App() {
       }
     );
 
-    return () => {
-      off(settingsRef, 'value', unsubscribe);
-    };
+    return unsubscribe;
   }, [currentUser]);
 
   // Otomatis kunci dropdown siswa jika user adalah orang tua
@@ -1757,61 +1566,6 @@ export default function App() {
     }
   };
 
-  // FUNGSI SIMPAN/UPDATE DATA GURU KE FIREBASE DENGAN TOAST NOTIFICATION
-  const handleSaveTeacher = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!teacherFormData.nama.trim() || !teacherFormData.username.trim() || !teacherFormData.password.trim()) {
-      toastError('Form Tidak Lengkap', 'Nama, Username, dan Password guru wajib diisi!');
-      return;
-    }
-
-    setIsFirebaseSyncing(true);
-    try {
-      const teacherId = editingTeacherId || `teacher_${Date.now()}`;
-      const teacherRef = ref(db, `teachers/${teacherId}`);
-      const teacherProfile = { ...teacherFormData };
-      delete teacherProfile.password;
-      await set(teacherRef, teacherProfile);
-
-      toastSuccess(
-        editingTeacherId ? 'Data Guru Berhasil Diperbarui' : 'Data Guru Berhasil Ditambahkan',
-        `Akun guru "${teacherFormData.nama}" berhasil tersimpan ke Firebase node /teachers.`
-      );
-
-      // Reset form
-      setTeacherFormData({
-        nama: '',
-        tingkatKelas: '4',
-        namaKelas: 'Kelas IV (Fase B)',
-        username: '',
-        password: '',
-        niy: ''
-      });
-      setEditingTeacherId(null);
-    } catch (err: any) {
-      console.error('Error saving teacher:', err);
-      toastError('Gagal Menyimpan Guru', err?.message || 'Gagal menyimpan ke Firebase Realtime Database.');
-    } finally {
-      setIsFirebaseSyncing(false);
-    }
-  };
-
-  // FUNGSI HAPUS GURU DARI FIREBASE DENGAN TOAST NOTIFICATION
-  const handleDeleteTeacher = async (id: string, name: string) => {
-    if (!confirm(`Yakin ingin menghapus guru "${name}"?`)) return;
-    setIsFirebaseSyncing(true);
-    try {
-      const teacherRef = ref(db, `teachers/${id}`);
-      await remove(teacherRef);
-      toastSuccess('Data Guru Berhasil Dihapus', `Data guru "${name}" telah dihapus dari Firebase.`);
-    } catch (err: any) {
-      console.error('Error deleting teacher:', err);
-      toastError('Gagal Menghapus Guru', err?.message || 'Gagal menghapus dari Firebase.');
-    } finally {
-      setIsFirebaseSyncing(false);
-    }
-  };
-
   // FUNGSI SIMPAN PERSONALISASI APLIKASI (APP SETTINGS) KE FIREBASE
   const handleSaveAppSettings = async () => {
     setIsFirebaseSyncing(true);
@@ -1893,11 +1647,10 @@ export default function App() {
   };
 
   const [printStatus, setPrintStatus] = useState<string | null>(null);
-  const [isFullscreenPrint, setIsFullscreenPrint] = useState<boolean>(false);
   const [showKopSekolah, setShowKopSekolah] = useState<boolean>(true);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-  const [tableHeaderStyle, setTableHeaderStyle] = useState<'screenshot2' | 'screenshot1'>('screenshot2');
-  const [studentInfoStyle, setStudentInfoStyle] = useState<'table' | 'simple'>('simple');
+  const [tableHeaderStyle] = useState<'screenshot2' | 'screenshot1'>('screenshot2');
+  const [studentInfoStyle] = useState<'table' | 'simple'>('simple');
   const [reportViewMode, setReportViewMode] = useState<'document' | 'spider_chart'>('document');
   
   // Personalisasi Lembar Laporan (Font, Ukuran, dan Warna Tabel)
@@ -1927,7 +1680,6 @@ export default function App() {
   const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
   const [downloadScope, setDownloadScope] = useState<'single' | 'all'>('single');
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx'>('pdf');
-  const [saveLocationMode, setSaveLocationMode] = useState<'picker' | 'direct'>('picker');
   const [isProcessingExport, setIsProcessingExport] = useState<boolean>(false);
 
   // State Pengaturan Kertas & Printer
@@ -2068,55 +1820,6 @@ export default function App() {
   }, [masterStudents, activeTriwulan, fallbackMasterStudent]);
 
   const selectedStudent = dataSiswa.find((s) => s.no === selectedStudentNum) || dataSiswa[0] || fallbackSiswaItem;
-  const selectedReportStudent = reportSiswa.find((s) => s.no === selectedStudentNum) || reportSiswa[0] || selectedStudent;
-  const selectedMasterStudent = masterStudents.find((s) => s.no === selectedStudentNum) || masterStudents[0] || fallbackMasterStudent;
-
-  // Komponen Banner Identitas Periode Aktif (Requirement 4)
-  const renderPeriodeBanner = (aspekLabel?: string) => {
-    const curOpt = TRIWULAN_OPTIONS.find((t) => t.id === activeTriwulan) || TRIWULAN_OPTIONS[0];
-    return (
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-2 border-amber-400 rounded-xl p-3 sm:p-4 text-white shadow-md flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black text-sm shadow-md border-2 border-white/40 shrink-0">
-            {curOpt.short}
-          </div>
-          <div>
-            <div className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-              <span>PERIODE PENILAIAN AKTIF:</span>
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black">
-                {curOpt.label}
-              </span>
-            </div>
-            <div className="text-xs sm:text-sm font-black text-white uppercase tracking-tight">
-              RAPOR SISWA KELAS IV • {curOpt.label} {aspekLabel ? `• ${aspekLabel}` : ''}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 bg-black/60 p-1.5 rounded-xl border border-white/20 shadow-inner">
-          <span className="text-[11px] font-bold text-slate-300 px-2 hidden sm:inline">Pilih Periode:</span>
-          {TRIWULAN_OPTIONS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                setActiveTriwulan(t.id);
-                setPrintStatus(`Periode penilaian aktif beralih ke ${t.label}. Seluruh lembar penilaian terhubung ke data ${t.label}.`);
-                setTimeout(() => setPrintStatus(null), 3500);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer border ${
-                activeTriwulan === t.id
-                  ? 'bg-amber-500 text-black border-white shadow-md ring-2 ring-white scale-102 font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10 border-transparent'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   // Generator Dokumen HTML Rapor Lengkap, Mandiri & Berwarna 100% Persis Format Sekolah
   // Generator Konten Lembar Rapor Siswa (Body HTML Mandiri)
   const generateSingleReportBodyHTML = (
@@ -2380,128 +2083,6 @@ export default function App() {
         </table>
       </div>
     `;
-  };
-
-  // Generator Dokumen HTML Rapor Lengkap, Mandiri & Siap Cetak
-  const generateFullReportHTML = (
-    student: SiswaData,
-    isDetailMode: boolean = true,
-    withKop: boolean = true,
-    customKop: string | null = uploadedKopImage,
-    tblStyle: 'screenshot2' | 'screenshot1' = tableHeaderStyle,
-    infoStyle: 'table' | 'simple' = studentInfoStyle,
-    options?: {
-      fontFamily?: string;
-      fontSize?: 'sm' | 'base' | 'lg';
-      themeColor?: string;
-      paperSize?: 'A4' | 'F4' | 'Letter' | 'Legal';
-      paperOrientation?: 'portrait' | 'landscape';
-      paperMargin?: 'normal' | 'narrow' | 'wide';
-      colorMode?: 'color' | 'grayscale';
-      scale?: number;
-      autoPrint?: boolean;
-    }
-  ) => {
-    const chosenFontKey = options?.fontFamily || reportFontFamily;
-    const fontConf = FONT_OPTIONS.find((f) => f.id === chosenFontKey) || FONT_OPTIONS[0];
-    const chosenSizeKey = options?.fontSize || reportFontSize;
-    const sizeConf = FONT_SIZES.find((s) => s.id === chosenSizeKey) || FONT_SIZES[1];
-    const pSize = options?.paperSize || paperSize;
-    const pOrient = options?.paperOrientation || paperOrientation;
-    const pMargin = options?.paperMargin || paperMargin;
-    const isGray = (options?.colorMode || printColorMode) === 'grayscale';
-    const scaleVal = (options?.scale ?? printScale) / 100;
-    const shouldAutoPrint = options?.autoPrint ?? true;
-
-    const marginMap = {
-      normal: '8mm 10mm',
-      narrow: '4mm 6mm',
-      wide: '14mm 16mm'
-    };
-    const sizeMap = {
-      A4: '210mm 297mm',
-      F4: '215mm 330mm',
-      Letter: '216mm 279mm',
-      Legal: '216mm 356mm'
-    };
-
-    const bodyContent = generateSingleReportBodyHTML(
-      student,
-      isDetailMode,
-      withKop,
-      customKop,
-      tblStyle,
-      infoStyle,
-      options
-    );
-
-    return `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <title>Rapor_${student.nama}_${student.nis}</title>
-  <style>
-    @page {
-      size: ${sizeMap[pSize] || '210mm 297mm'} ${pOrient};
-      margin: ${marginMap[pMargin] || '8mm 10mm'};
-    }
-    * {
-      box-sizing: border-box;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-    body {
-      font-family: ${fontConf.css};
-      font-size: ${sizeConf.bodyFont};
-      color: #000000;
-      background-color: #ffffff;
-      margin: 0 auto;
-      max-width: ${pOrient === 'landscape' ? '297mm' : '210mm'};
-      padding: 10px;
-      transform: scale(${scaleVal});
-      transform-origin: top center;
-      ${isGray ? 'filter: grayscale(100%);' : ''}
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 12px;
-    }
-    th, td {
-      font-size: ${sizeConf.tableFont};
-      line-height: 1.35;
-    }
-    .text-center { text-align: center; }
-    .text-left { text-align: left; }
-    .text-right { text-align: right; }
-    .font-bold { font-weight: bold; }
-    .font-black { font-weight: 900; }
-    .uppercase { text-transform: uppercase; }
-    @media print {
-      body {
-        padding: 0;
-        margin: 0;
-        max-width: none;
-      }
-      .no-print {
-        display: none !important;
-      }
-    }
-  </style>
-</head>
-<body>
-  ${bodyContent}
-  ${shouldAutoPrint ? `
-  <script>
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 400);
-    };
-  </script>
-  ` : ''}
-</body>
-</html>`;
   };
 
   // Generator Dokumen HTML untuk Banyak Siswa Sekaligus (Batch Rapor dengan Page Break)
@@ -5094,7 +4675,6 @@ export default function App() {
                             key={`spider-triwulan-${t.id}`}
                             onClick={() => {
                               setActiveTriwulan(t.id);
-                              setReportTriwulan(t.id);
                               setPrintStatus(`Spider Chart menampilkan data ${t.label}.`);
                               setTimeout(() => setPrintStatus(null), 3000);
                             }}
@@ -5204,7 +4784,6 @@ export default function App() {
                             key={`rapor-triwulan-${t.id}`}
                             onClick={() => {
                               setActiveTriwulan(t.id);
-                              setReportTriwulan(t.id);
                               setPrintStatus(`Lembar Rapor menampilkan data ${t.label}.`);
                               setTimeout(() => setPrintStatus(null), 3000);
                             }}

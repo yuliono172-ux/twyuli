@@ -3,8 +3,7 @@ import {
   StudentRecord,
   TriwulanKey,
   TRIWULAN_OPTIONS,
-  ASPEK_LIST,
-  QuarterComparisonItem
+  ASPEK_LIST
 } from '../types/rapor';
 import {
   compareTwoQuarters,
@@ -15,11 +14,9 @@ import {
   Printer,
   TrendingUp,
   TrendingDown,
-  ArrowRight,
   Activity,
   BarChart3,
   Compass,
-  CheckCircle2,
   AlertTriangle,
   Info,
   ChevronDown,
@@ -27,8 +24,7 @@ import {
   Sparkles,
   User,
   Calendar,
-  Layers,
-  Award
+  Layers
 } from 'lucide-react';
 import {
   ResponsiveContainer,

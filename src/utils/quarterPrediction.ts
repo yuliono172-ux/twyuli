@@ -1,8 +1,7 @@
 import {
   SiswaData,
   TriwulanKey,
-  ASPEK_LIST,
-  GRADE_WEIGHTS
+  ASPEK_LIST
 } from '../types/rapor';
 
 export interface DimensionPredictionItem {

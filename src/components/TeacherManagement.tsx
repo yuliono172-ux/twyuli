@@ -17,14 +17,10 @@ import {
   GraduationCap,
   BookOpen,
   Layers,
-  Printer,
   RefreshCw,
-  ExternalLink,
-  Info,
   Phone,
   Mail,
-  Award,
-  ChevronRight
+  Award
 } from 'lucide-react';
 import { TeacherRecord } from '../firebase';
 import { StudentRecord } from '../types/rapor';

@@ -3,18 +3,14 @@ import * as XLSX from 'xlsx';
 import {
   Upload,
   FileSpreadsheet,
-  FileText,
   Download,
   CheckCircle2,
   AlertCircle,
   X,
   Clipboard,
-  Plus,
-  RefreshCw,
-  Users,
   Info
 } from 'lucide-react';
-import { StudentRecord, SiswaAssessmentRecord } from '../types/rapor';
+import { StudentRecord } from '../types/rapor';
 import { createEmptyAssessmentRecord } from '../data/initialData';
 
 interface ExcelImportModalProps {
@@ -108,7 +104,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     if (matrix.length === 0) return [];
 
     let headerRowIndex = -1;
-    let colNo = -1;
     let colNama = -1;
     let colNis = -1;
     let colKelas = -1;
@@ -122,8 +117,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       if (hasNama || hasNis) {
         headerRowIndex = r;
         row.forEach((cell, idx) => {
-          if (cell === 'no' || cell === 'nomor' || cell === 'urut') colNo = idx;
-          else if (cell.includes('nama') || cell.includes('peserta') || cell.includes('siswa')) colNama = idx;
+          if (cell.includes('nama') || cell.includes('peserta') || cell.includes('siswa')) colNama = idx;
           else if (cell.includes('nis') || cell.includes('induk')) colNis = idx;
           else if (cell.includes('kelas') || cell.includes('rombel') || cell.includes('tingkat')) colKelas = idx;
         });
@@ -144,16 +138,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
       let namaVal = '';
       let nisVal = '';
-      let noVal = autoSequence;
       let kelasVal = overrideKelas;
 
       if (headerRowIndex >= 0) {
         if (colNama >= 0 && row[colNama]) namaVal = row[colNama];
         if (colNis >= 0 && row[colNis]) nisVal = row[colNis];
-        if (colNo >= 0 && row[colNo]) {
-          const parsedNo = parseInt(row[colNo], 10);
-          if (!isNaN(parsedNo) && parsedNo > 0) noVal = parsedNo;
-        }
         if (colKelas >= 0 && row[colKelas]) kelasVal = row[colKelas];
       } else {
         // Fallback heuristik kolom:
@@ -174,7 +163,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           // 3 Kolom: NO, NAMA, NIS atau NAMA, NIS, KELAS
           const isFirstNo = /^\d{1,3}$/.test(row[0]);
           if (isFirstNo) {
-            noVal = parseInt(row[0], 10) || autoSequence;
             namaVal = row[1];
             nisVal = row[2];
           } else {
@@ -186,7 +174,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           // 4+ Kolom: [0]=NO, [1]=NAMA, [2]=NIS, [3]=KELAS
           const parsedNo = parseInt(row[0], 10);
           if (!isNaN(parsedNo) && parsedNo > 0) {
-            noVal = parsedNo;
             namaVal = row[1] || '';
             nisVal = row[2] || '';
             kelasVal = row[3] || overrideKelas;

@@ -16,3 +16,19 @@ declare module 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js' 
   export function update(ref: any, values: any): Promise<void>;
   export function remove(ref: any): Promise<void>;
 }
+
+declare module 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js' {
+  interface FirebaseUser {
+    uid: string;
+    email?: string | null;
+    displayName?: string | null;
+  }
+
+  export function getAuth(app?: any): any;
+  export function onAuthStateChanged(
+    auth: any,
+    callback: (user: FirebaseUser | null) => void
+  ): () => void;
+  export function signInWithEmailAndPassword(auth: any, email: string, password: string): Promise<any>;
+  export function signOut(auth: any): Promise<void>;
+}

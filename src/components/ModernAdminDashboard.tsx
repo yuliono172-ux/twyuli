@@ -6,29 +6,19 @@ import {
   TrendingUp,
   CheckCircle2,
   AlertTriangle,
-  FileCheck,
   Search,
   Calendar,
   Bell,
   Settings,
   Maximize2,
   Minimize2,
-  ChevronRight,
-  ArrowUpRight,
   Compass,
-  Radar,
   Printer,
   Sparkles,
-  BarChart3,
-  Layers,
   ArrowRight,
   ShieldCheck,
   BookOpen,
-  Filter,
-  Eye,
-  RefreshCw,
-  Clock,
-  UserCheck
+  RefreshCw
 } from 'lucide-react';
 import { SiswaData, TriwulanKey, ASPEK_LIST, GRADE_WEIGHTS } from '../types/rapor';
 import { TeacherRecord } from '../firebase';
