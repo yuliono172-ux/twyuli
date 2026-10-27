@@ -2501,11 +2501,6 @@ export default function App() {
     }
   };
 
-  // Buka Halaman Cetak di Tab Baru (Fallback & Kompatibilitas)
-  const handleOpenPrintTab = () => {
-    handleExecutePrint(true);
-  };
-
   // Unduh File Rapor Mandiri (Fallback & Kompatibilitas)
   const handleDownloadRaporHTML = () => {
     setShowDownloadModal(true);
@@ -2716,32 +2711,6 @@ export default function App() {
   </script>
 </body>
 </html>`;
-  };
-
-  const handleOpenSpiderPrintTab = () => {
-    const fullHtml = generateSpiderReportHTML(selectedStudent);
-    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const newTab = window.open(url, '_blank');
-    if (newTab) {
-      setPrintStatus('Membuka Spider Chart di Tab Baru untuk dicetak/disimpan PDF!');
-      setTimeout(() => setPrintStatus(null), 5000);
-    } else {
-      setShowPrintModal(true);
-    }
-  };
-
-  const handleDownloadSpiderChartHTML = () => {
-    const fullHtml = generateSpiderReportHTML(selectedStudent);
-    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `SpiderChart_Rapor_${selectedStudent.nama.replace(/\s+/g, '_')}_${selectedStudent.nis}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setPrintStatus('File Spider Chart Rapor berhasil diunduh!');
-    setTimeout(() => setPrintStatus(null), 5000);
   };
 
   if (!isAuthReady) {
