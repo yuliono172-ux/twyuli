@@ -28,10 +28,6 @@ import {
   Palette,
   Type,
   FolderOpen,
-  User,
-  Lock,
-  Eye,
-  EyeOff,
   LogOut,
   Users,
   Shield,
@@ -90,7 +86,6 @@ import {
   onValue,
   remove,
   onAuthStateChanged,
-  signInWithEmailAndPassword,
   signOut,
   TeacherRecord,
   AppSettings
@@ -128,13 +123,6 @@ const classKeyFor = (className: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-
-const authEmailForUsername = (username: string) => {
-  const normalized = username.trim().toLowerCase();
-  return normalized.includes('@')
-    ? normalized
-    : `${normalized}@triwulan-a6d54.firebaseapp.com`;
-};
 
 const groupStudentsByClass = (students: StudentRecord[]) =>
   students.reduce<Record<string, Record<string, StudentRecord>>>((groups, student) => {
@@ -1051,7 +1039,6 @@ export default function App() {
         setCurrentUser(null);
         setMasterStudents([]);
         localStorage.removeItem('rapor_master_multiquarter_v2');
-        setIsAuthReady(true);
         return;
       }
 
@@ -1079,17 +1066,13 @@ export default function App() {
           throw new Error('Profil akun belum terhubung ke kelas atau siswa yang benar.');
         }
 
-        setAuthProfileError(null);
         setMasterStudents([]);
         localStorage.removeItem('rapor_master_multiquarter_v2');
         setCurrentUser(account);
       } catch (error: any) {
         console.error('Gagal memuat profil akses Firebase:', error);
         setCurrentUser(null);
-        setAuthProfileError(error?.message || 'Gagal memuat profil akun.');
         await signOut(auth);
-      } finally {
-        setIsAuthReady(true);
       }
     });
 
@@ -1098,13 +1081,6 @@ export default function App() {
 
   // Authentication & Role-based Access State
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [authProfileError, setAuthProfileError] = useState<string | null>(null);
-
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
   const [firebaseConnected, setFirebaseConnected] = useState<boolean>(true);
 
@@ -1297,14 +1273,12 @@ export default function App() {
     let studentsPath = 'class_students';
     if (currentUser.role === 'guru') {
       if (!currentUser.classKey) {
-        setAuthProfileError('Profil guru belum memiliki kelas binaan. Hubungi administrator.');
         setMasterStudents([]);
         return;
       }
       studentsPath = `class_students/${currentUser.classKey}`;
     } else if (currentUser.role === 'orangtua') {
       if (!currentUser.classKey || !currentUser.studentKey || currentUser.studentNo === undefined) {
-        setAuthProfileError('Profil orang tua belum terhubung ke data siswa. Hubungi administrator.');
         setMasterStudents([]);
         return;
       }
@@ -1595,43 +1569,6 @@ export default function App() {
       toastError('Gagal Menyimpan Pengaturan', err?.message || 'Gagal tersambung ke Firebase.');
     } finally {
       setIsFirebaseSyncing(false);
-    }
-  };
-
-  // Firebase Auth validates the credentials; the trusted user_access record defines the role.
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-
-    const inputUser = loginForm.username.trim();
-    const inputPass = loginForm.password;
-
-    if (!inputUser || !inputPass) {
-      setLoginError('Silakan masukkan username dan password!');
-      return;
-    }
-
-    setIsLoggingIn(true);
-    try {
-      await signInWithEmailAndPassword(auth, authEmailForUsername(inputUser), inputPass);
-      setLoginForm({ username: '', password: '' });
-      toastSuccess('Login Berhasil', 'Memuat profil dan hak akses akun Anda.');
-    } catch (error: any) {
-      console.error('Firebase Authentication login error:', error);
-      if (error?.code === 'auth/network-request-failed') {
-        setLoginError('Tidak dapat terhubung ke layanan login. Periksa koneksi internet.');
-      } else if (
-        error?.code === 'auth/invalid-credential' ||
-        error?.code === 'auth/user-not-found' ||
-        error?.code === 'auth/wrong-password' ||
-        error?.code === 'auth/invalid-email'
-      ) {
-        setLoginError('Username atau password tidak cocok. Periksa kembali kredensial Anda.');
-      } else {
-        setLoginError(error?.message || 'Login gagal. Silakan coba kembali.');
-      }
-    } finally {
-      setIsLoggingIn(false);
     }
   };
 
@@ -2510,157 +2447,6 @@ export default function App() {
   const handlePrintRapor = () => {
     setShowPrintModal(true);
   };
-
-  if (!isAuthReady) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#070D1A] text-sm font-medium text-slate-300">
-        Memeriksa sesi login...
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#070D1A] px-4 py-10 text-slate-100">
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-36 -top-40 h-96 w-96 rounded-full bg-blue-600/20 blur-3xl" />
-          <div className="absolute -bottom-40 -right-32 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
-          <div className="absolute inset-0 bg-[radial-gradient(rgba(148,163,184,0.12)_1px,transparent_1px)] [background-size:24px_24px]" />
-        </div>
-
-        <main className="relative z-10 w-full max-w-md">
-          <div className="mb-7 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-400/40 bg-gradient-to-br from-blue-500 to-indigo-700 shadow-lg shadow-blue-950/50">
-              <School className="h-8 w-8 text-white" aria-hidden="true" />
-            </div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">E-Rapor Digital</p>
-            <h1 className="mt-2 text-xl font-extrabold leading-snug text-white sm:text-2xl">
-              {metaRapor.kopSekolah.namaSekolah}
-            </h1>
-            <p className="mt-2 text-sm text-slate-400">Masuk untuk melanjutkan ke aplikasi rapor siswa</p>
-          </div>
-
-          <form
-            onSubmit={handleLoginSubmit}
-            className="rounded-2xl border border-slate-700/80 bg-slate-900/90 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
-          >
-            <div className="mb-6 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-white">Masuk ke akun Anda</h2>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Sistem mengenali akses admin, guru, atau orang tua secara otomatis.
-                </p>
-              </div>
-              <span
-                className={`mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-                  firebaseConnected
-                    ? 'border-emerald-700/70 bg-emerald-950/60 text-emerald-300'
-                    : 'border-rose-700/70 bg-rose-950/60 text-rose-300'
-                }`}
-                role="status"
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${firebaseConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                {firebaseConnected ? 'Database aktif' : 'Koneksi terputus'}
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="login-username" className="mb-1.5 block text-xs font-semibold text-slate-300">
-                  Username / NIS siswa
-                </label>
-                <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-                  <input
-                    id="login-username"
-                    name="username"
-                    type="text"
-                    autoComplete="username"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    required
-                    value={loginForm.username}
-                    onChange={(event) => {
-                      setLoginForm({ ...loginForm, username: event.target.value });
-                      if (loginError) setLoginError(null);
-                    }}
-                    placeholder="Masukkan username atau NIS"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="login-password" className="mb-1.5 block text-xs font-semibold text-slate-300">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-                  <input
-                    id="login-password"
-                    name="password"
-                    type={showLoginPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    value={loginForm.password}
-                    onChange={(event) => {
-                      setLoginForm({ ...loginForm, password: event.target.value });
-                      if (loginError) setLoginError(null);
-                    }}
-                    placeholder="Masukkan password"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-10 pr-12 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword((visible) => !visible)}
-                    aria-label={showLoginPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-                    aria-pressed={showLoginPassword}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {loginError && (
-              <p
-                id="login-error"
-                role="alert"
-                className="mt-4 rounded-xl border border-rose-800/80 bg-rose-950/50 px-3 py-2.5 text-sm text-rose-200"
-              >
-                {loginError}
-              </p>
-            )}
-
-            {authProfileError && (
-              <p className="mt-3 text-xs text-rose-300" role="status">
-                {authProfileError}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-950/40 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-            >
-              <LogOut className="h-4 w-4 rotate-180" aria-hidden="true" />
-              {isLoggingIn ? 'Memeriksa akun...' : 'Masuk'}
-            </button>
-
-            <div className="mt-5 border-t border-slate-800 pt-4 text-xs leading-relaxed text-slate-400">
-              <p>Akun dan hak akses dibuat oleh administrator melalui Firebase.</p>
-              <p className="mt-1.5">Orang tua memakai username NIS dan password akun Firebase yang telah diberikan.</p>
-            </div>
-          </form>
-
-          <p className="mt-5 text-center text-[11px] text-slate-500">
-            Akses hanya untuk warga sekolah yang memiliki akun.
-          </p>
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#070D1A] text-slate-900 font-sans flex flex-col items-center justify-start p-1 sm:p-4">
